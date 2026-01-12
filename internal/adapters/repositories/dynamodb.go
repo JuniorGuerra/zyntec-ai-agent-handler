@@ -19,9 +19,9 @@ type DynamoDBRepository struct {
 }
 
 var (
-	sessionTableName  = aws.String("sessions")
-	messageTableName  = aws.String("messages")
-	customerTableName = aws.String("customers")
+	sessionTableName  = aws.String("zyntec_agent_sessions")
+	messageTableName  = aws.String("zyntec_agent_messages")
+	customerTableName = aws.String("zyntec_agent_customers")
 )
 
 func NewDynamoDBRepository() *DynamoDBRepository {

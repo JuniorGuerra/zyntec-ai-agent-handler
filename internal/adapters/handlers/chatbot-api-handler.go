@@ -47,7 +47,15 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 
 	slog.Info("Request", "request", req)
 
-	err := h.getOrCreateSession(req.Me.ID, req.Payload.From)
+	customer, err := h.repository.GetCustomer(req.Me.ID)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+			StatusCode: 500,
+		}, nil
+	}
+
+	err = h.getOrCreateSession(req.Me.ID, req.Payload.From)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
@@ -65,7 +73,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	h.aiService.SetSystemInstruction("You are a helpful assistant.", messages)
+	h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
 
 	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)
 	if err != nil {
