@@ -47,6 +47,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 
 	slog.Info("Request", "request", req)
 
+	start := time.Now()
 	customer, err := h.repository.GetCustomer(req.Me.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -54,7 +55,9 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+	slog.Info("Customer", "customer", customer, "duration", time.Since(start))
 
+	start = time.Now()
 	err = h.getOrCreateSession(req.Me.ID, req.Payload.From)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -62,9 +65,13 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+	slog.Info("Session", "session", h.session, "duration", time.Since(start))
 
+	start = time.Now()
 	go h.addMessageToSession(models.CustomerRole, req.Payload.Body)
+	slog.Info("Add message to session", "duration", time.Since(start))
 
+	start = time.Now()
 	messages, err := h.repository.GetMessageHistory(h.session.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -72,10 +79,14 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+	slog.Info("Get message history", "messages", messages, "duration", time.Since(start))
 
+	start = time.Now()
 	h.aiService.SetModel(customer.AIModel)
 	h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
+	slog.Info("Set model and system instruction", "duration", time.Since(start))
 
+	start = time.Now()
 	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -83,7 +94,9 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+	slog.Info("Generate response", "ai_response", aiResponse, "duration", time.Since(start))
 
+	start = time.Now()
 	h.addMessageToSession(models.AssistantRole, aiResponse)
 	err = h.saveMessages()
 	if err != nil {
@@ -92,6 +105,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+	slog.Info("Save messages", "duration", time.Since(start))
 
 	// err = h.wahaService.SendWhatsAppMessage(h.session.CustomerPhoneNumber, aiResponse)
 	// if err != nil {
@@ -162,12 +176,10 @@ func (h *ChatbotAPIHandler) saveMessages() error {
 		return nil
 	}
 
-	for _, message := range h.messages {
-		err := h.repository.SaveMessage(message)
-		if err != nil {
-			slog.Error("Error saving message", "message", message, "error", err)
-			return err
-		}
+	err := h.repository.SaveMessages(h.messages...)
+	if err != nil {
+		slog.Error("Error saving messages", "count", len(h.messages), "error", err)
+		return err
 	}
 
 	return nil

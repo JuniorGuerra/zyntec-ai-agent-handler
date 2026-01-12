@@ -59,22 +59,41 @@ func (r *DynamoDBRepository) SaveSession(session models.Session) error {
 	return err
 }
 
-func (r *DynamoDBRepository) SaveMessage(message models.Message) error {
+func (r *DynamoDBRepository) SaveMessages(messages ...models.Message) error {
+	if len(messages) == 0 {
+		return nil
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	item, err := attributevalue.MarshalMap(message)
+	var writeRequests []types.WriteRequest
+	for _, message := range messages {
+		item, err := attributevalue.MarshalMap(message)
+		if err != nil {
+			slog.Error("failed to marshal message", "error", err, "message", message)
+			return err
+		}
+
+		writeRequests = append(writeRequests, types.WriteRequest{
+			PutRequest: &types.PutRequest{
+				Item: item,
+			},
+		})
+	}
+
+	_, err := r.dynamoDBClient.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{
+		RequestItems: map[string][]types.WriteRequest{
+			*messageTableName: writeRequests,
+		},
+	})
+
 	if err != nil {
-		slog.Error("failed to marshal message", "error", err, "message", message)
+		slog.Error("failed to batch write messages", "error", err, "count", len(messages))
 		return err
 	}
 
-	_, err = r.dynamoDBClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: messageTableName,
-		Item:      item,
-	})
-
-	return err
+	return nil
 }
 
 func (r *DynamoDBRepository) GetSession(sessionID string) (*models.Session, error) {
