@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -19,6 +20,10 @@ type ChatbotAPIHandler struct {
 	repository  repositories.Repository
 	aiService   ai.AIModels
 	wahaService whatsappsvc.WhatsAppService
+
+	session  *models.Session
+	messages []models.Message
+	mu       *sync.Mutex
 }
 
 func NewChatbotAPIHandler(repository repositories.Repository, aiService ai.AIModels, wahaService whatsappsvc.WhatsAppService) *ChatbotAPIHandler {
@@ -26,71 +31,36 @@ func NewChatbotAPIHandler(repository repositories.Repository, aiService ai.AIMod
 		repository:  repository,
 		aiService:   aiService,
 		wahaService: wahaService,
+		mu:          &sync.Mutex{},
 	}
 }
 
 func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	req := &models.WebhookRequest{}
+
 	if err := json.Unmarshal([]byte(request.Body), req); err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error unmarshalling request: %v", err),
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
 
 	slog.Info("Request", "request", req)
 
-	sessionID := utils.GenerateSessionID(req.Me.ID, req.Payload.From)
-	session, err := h.repository.GetSession(sessionID) // TODO: or participant
+	err := h.getOrCreateSession(req.Me.ID, req.Payload.From)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error getting session: %v", err),
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
 
-	slog.Info("Session found", "session", session)
+	go h.addMessageToSession(models.CustomerRole, req.Payload.Body)
 
-	if session == nil {
-		session = &models.Session{
-			ID:                  sessionID,
-			CreatedAt:           time.Now(),
-			SessionExpiryAt:     time.Now().Add(1 * time.Hour),
-			BusinessPhoneNumber: req.Me.ID,
-			CustomerPhoneNumber: req.Payload.From,
-		}
-
-		err = h.repository.SaveSession(*session)
-		if err != nil {
-			return events.APIGatewayProxyResponse{
-				Body:       fmt.Sprintf("Error saving session: %v", err),
-				StatusCode: 500,
-			}, nil
-		}
-	}
-
-	err = h.repository.SaveMessage(models.Message{
-		ID:                  uuid.New().String(),
-		CreatedAt:           time.Now(),
-		SessionID:           session.ID,
-		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
-		Message:             req.Payload.Body,
-		BusinessPhoneNumber: session.BusinessPhoneNumber,
-		CustomerPhoneNumber: session.CustomerPhoneNumber,
-		Role:                models.CustomerRole,
-	})
-
+	messages, err := h.repository.GetMessageHistory(h.session.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error saving user message: %v", err),
-			StatusCode: 500,
-		}, nil
-	}
-
-	messages, err := h.repository.GetMessageHistory(session.ID)
-	if err != nil {
-		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error getting message history: %v", err),
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
@@ -100,39 +70,96 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error generating AI response: %v", err),
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
 
-	err = h.repository.SaveMessage(models.Message{
-		ID:                  uuid.New().String(),
-		CreatedAt:           time.Now(),
-		SessionID:           session.ID,
-		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
-		Message:             aiResponse,
-		BusinessPhoneNumber: session.BusinessPhoneNumber,
-		CustomerPhoneNumber: session.CustomerPhoneNumber,
-		Role:                models.AssistantRole,
-	})
-
+	h.addMessageToSession(models.AssistantRole, aiResponse)
+	err = h.saveMessages()
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error saving AI message: %v", err),
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
 
-	// err = h.wahaService.SendWhatsAppMessage(session.CustomerPhoneNumber, aiResponse)
+	// err = h.wahaService.SendWhatsAppMessage(h.session.CustomerPhoneNumber, aiResponse)
 	// if err != nil {
 	// 	return events.APIGatewayProxyResponse{
-	// 		Body:       fmt.Sprintf("Error sending WhatsApp message: %v", err),
+	// 		Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 	// 		StatusCode: 500,
 	// 	}, nil
 	// }
 
 	return events.APIGatewayProxyResponse{
-		Body:       fmt.Sprintf("Message saved successfully: %v", request.Body),
+		Body:       fmt.Sprintf(`{"message": "%v"}`, aiResponse),
 		StatusCode: 200,
 	}, nil
+}
+
+func (h *ChatbotAPIHandler) addMessageToSession(role models.Role, message string) {
+	if !role.IsValidRole() {
+		slog.Error("Invalid role", "role", role)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	h.messages = append(h.messages, models.Message{
+		CreatedAt:           time.Now(),
+		SessionID:           h.session.ID,
+		ID:                  uuid.New().String(),
+		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
+		Message:             message,
+		BusinessPhoneNumber: h.session.BusinessPhoneNumber,
+		CustomerPhoneNumber: h.session.CustomerPhoneNumber,
+		Role:                role,
+	})
+}
+
+func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) error {
+	sessionID := utils.GenerateSessionID(id, from)
+	session, err := h.repository.GetSession(sessionID) // TODO: or participant
+	if err != nil {
+		return err
+	}
+
+	if session == nil {
+		session = &models.Session{
+			ID:                  sessionID,
+			CreatedAt:           time.Now(),
+			SessionExpiryAt:     time.Now().Add(1 * time.Hour),
+			BusinessPhoneNumber: id,
+			CustomerPhoneNumber: from,
+		}
+
+		err = h.repository.SaveSession(*session)
+		if err != nil {
+			return err
+		}
+	}
+
+	h.session = session
+	return nil
+}
+
+func (h *ChatbotAPIHandler) saveMessages() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if len(h.messages) == 0 {
+		return nil
+	}
+
+	for _, message := range h.messages {
+		err := h.repository.SaveMessage(message)
+		if err != nil {
+			slog.Error("Error saving message", "message", message, "error", err)
+			return err
+		}
+	}
+
+	return nil
 }
