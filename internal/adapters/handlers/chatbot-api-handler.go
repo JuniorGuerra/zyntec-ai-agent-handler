@@ -73,6 +73,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
+	h.aiService.SetModel(customer.AIModel)
 	h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
 
 	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)

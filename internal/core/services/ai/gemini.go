@@ -32,6 +32,14 @@ func NewGeminiService(apiKey string) (AIModels, error) {
 	}, nil
 }
 
+func (s *GeminiService) SetModel(model string) {
+	if model == "" {
+		return
+	}
+
+	s.model = model
+}
+
 func (s *GeminiService) SetSystemInstruction(instruction string, history []models.Message) {
 	model := s.client.GenerativeModel(s.model)
 	model.SystemInstruction = &genai.Content{
