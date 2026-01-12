@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
 
 type GeminiService struct {
-	client *genai.Client
-	model  string
+	client  *genai.Client
+	model   string
+	session *genai.ChatSession
 }
 
 func NewGeminiService(apiKey string) (AIModels, error) {
@@ -30,32 +32,47 @@ func NewGeminiService(apiKey string) (AIModels, error) {
 	}, nil
 }
 
-func (s *GeminiService) GenerateResponse(history []models.Message, message string) (string, error) {
-	ctx := context.Background()
+func (s *GeminiService) SetSystemInstruction(instruction string, history []models.Message) {
 	model := s.client.GenerativeModel(s.model)
 	model.SystemInstruction = &genai.Content{
 		Parts: []genai.Part{
-			genai.Text("You are a helpful assistant."),
+			genai.Text(instruction),
 		},
 		Role: models.AssistantRole,
 	}
 
 	cs := model.StartChat()
 
+	s.session = cs
+
 	historyGemini := []*genai.Content{}
 
 	for _, msg := range history {
+		if !msg.Role.IsValidRole() {
+			continue
+		}
+
 		historyGemini = append(historyGemini, &genai.Content{
 			Parts: []genai.Part{
 				genai.Text(msg.Message),
 			},
-			Role: msg.Role,
+			Role: msg.Role.String(),
 		})
 	}
 
-	cs.History = historyGemini
+	s.session.History = historyGemini
+}
 
-	response, err := cs.SendMessage(ctx, genai.Text("Hello"))
+func (s *GeminiService) GenerateResponse(message string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if s.session == nil {
+		slog.Error("session is nil")
+		return "", fmt.Errorf("session is nil")
+	}
+
+	response, err := s.session.SendMessage(ctx, genai.Text(message))
 	if err != nil {
 		slog.Error("failed to generate response", "error", err)
 		return "", err

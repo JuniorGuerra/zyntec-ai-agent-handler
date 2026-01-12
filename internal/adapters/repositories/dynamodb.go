@@ -61,7 +61,6 @@ func (r *DynamoDBRepository) SaveSession(session models.Session) error {
 
 func (r *DynamoDBRepository) SaveMessage(message models.Message) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-
 	defer cancel()
 
 	item, err := attributevalue.MarshalMap(message)
@@ -142,17 +141,18 @@ func (r *DynamoDBRepository) GetMessageHistory(sessionID string) ([]models.Messa
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := r.dynamoDBClient.Scan(ctx, &dynamodb.ScanInput{
-		TableName:        messageTableName,
-		Limit:            aws.Int32(10),
-		FilterExpression: aws.String("session_id = :sid"),
+	result, err := r.dynamoDBClient.Query(ctx, &dynamodb.QueryInput{
+		TableName:              messageTableName,
+		KeyConditionExpression: aws.String("session_id = :sid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":sid": &types.AttributeValueMemberS{Value: sessionID},
 		},
+		Limit:            aws.Int32(20),
+		ScanIndexForward: aws.Bool(false),
 	})
 
 	if err != nil {
-		slog.Error("failed to scan message history", "error", err, "session_id", sessionID)
+		slog.Error("failed to query message history", "error", err, "session_id", sessionID)
 		return nil, err
 	}
 

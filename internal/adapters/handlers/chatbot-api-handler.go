@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/google/uuid"
 )
 
 type ChatbotAPIHandler struct {
@@ -69,10 +70,10 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	}
 
 	err = h.repository.SaveMessage(models.Message{
-		ID:                  request.RequestContext.RequestID,
+		ID:                  uuid.New().String(),
 		CreatedAt:           time.Now(),
 		SessionID:           session.ID,
-		Timestamp:           req.Payload.Timestamp,
+		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		Message:             req.Payload.Body,
 		BusinessPhoneNumber: session.BusinessPhoneNumber,
 		CustomerPhoneNumber: session.CustomerPhoneNumber,
@@ -81,7 +82,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 
 	if err != nil {
 		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf("Error saving message: %v", err),
+			Body:       fmt.Sprintf("Error saving user message: %v", err),
 			StatusCode: 500,
 		}, nil
 	}
@@ -94,7 +95,9 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	aiResponse, err := h.aiService.GenerateResponse(messages, req.Payload.Body)
+	h.aiService.SetSystemInstruction("You are a helpful assistant.", messages)
+
+	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf("Error generating AI response: %v", err),
@@ -103,10 +106,10 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	}
 
 	err = h.repository.SaveMessage(models.Message{
-		ID:                  request.RequestContext.RequestID,
+		ID:                  uuid.New().String(),
 		CreatedAt:           time.Now(),
 		SessionID:           session.ID,
-		Timestamp:           req.Payload.Timestamp,
+		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		Message:             aiResponse,
 		BusinessPhoneNumber: session.BusinessPhoneNumber,
 		CustomerPhoneNumber: session.CustomerPhoneNumber,

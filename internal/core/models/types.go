@@ -22,9 +22,9 @@ type Message struct {
 	BusinessPhoneNumber string    `json:"business_phone_number" dynamodbav:"business_phone_number"`
 	CustomerPhoneNumber string    `json:"customer_phone_number" dynamodbav:"customer_phone_number"`
 	SessionID           string    `json:"session_id" dynamodbav:"session_id"`
-	Timestamp           int64     `json:"timestamp" dynamodbav:"timestamp"`
+	Timestamp           string    `json:"timestamp" dynamodbav:"timestamp"`
 	Message             string    `json:"message" dynamodbav:"message"`
-	Role                string    `json:"interaction" dynamodbav:"interaction"`
+	Role                Role      `json:"interaction" dynamodbav:"interaction"`
 	CreatedAt           time.Time `json:"created_at" dynamodbav:"created_at"`
 }
 
@@ -52,4 +52,14 @@ type WebhookPayload struct {
 	Timestamp   int64  `json:"timestamp"`
 	FromMe      bool   `json:"fromMe"`
 	Participant string `json:"participant,omitempty"`
+}
+
+type Role string
+
+func (r Role) IsValidRole() bool {
+	return r == CustomerRole || r == AssistantRole || r == FunctionRole
+}
+
+func (r Role) String() string {
+	return string(r)
 }
