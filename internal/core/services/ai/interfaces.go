@@ -1,5 +1,7 @@
-package services
+package ai
+
+import "app/internal/core/models"
 
 type AIModels interface {
-	GenerateResponse(sessionID string, message string) (string, error)
+	GenerateResponse(history []models.Message, message string) (string, error)
 }

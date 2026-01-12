@@ -3,6 +3,7 @@ package repositories
 import (
 	"app/internal/core/models"
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 type DynamoDBRepository struct {
@@ -17,8 +19,9 @@ type DynamoDBRepository struct {
 }
 
 var (
-	sessionTableName = aws.String("sessions")
-	messageTableName = aws.String("messages")
+	sessionTableName  = aws.String("sessions")
+	messageTableName  = aws.String("messages")
+	customerTableName = aws.String("customers")
 )
 
 func NewDynamoDBRepository() *DynamoDBRepository {
@@ -73,4 +76,115 @@ func (r *DynamoDBRepository) SaveMessage(message models.Message) error {
 	})
 
 	return err
+}
+
+func (r *DynamoDBRepository) GetSession(sessionID string) (*models.Session, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.dynamoDBClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: sessionTableName,
+		Key: map[string]types.AttributeValue{
+			"id": &types.AttributeValueMemberS{Value: sessionID},
+		},
+	})
+
+	if err != nil {
+		slog.Error("failed to get session", "error", err, "session_id", sessionID)
+		return nil, err
+	}
+
+	if result.Item == nil {
+		return nil, nil
+	}
+
+	var session models.Session
+	err = attributevalue.UnmarshalMap(result.Item, &session)
+	if err != nil {
+		slog.Error("failed to unmarshal session", "error", err)
+		return nil, err
+	}
+
+	return &session, nil
+}
+
+func (r *DynamoDBRepository) GetCustomer(businessPhoneNumber string) (*models.Customer, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.dynamoDBClient.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: customerTableName,
+		Key: map[string]types.AttributeValue{
+			"business_phone_number": &types.AttributeValueMemberS{Value: businessPhoneNumber},
+		},
+	})
+
+	if err != nil {
+		slog.Error("failed to get customer", "error", err, "business_phone", businessPhoneNumber)
+		return nil, err
+	}
+
+	if result.Item == nil {
+		return nil, fmt.Errorf("customer not found: %s", businessPhoneNumber)
+	}
+
+	var customer models.Customer
+	err = attributevalue.UnmarshalMap(result.Item, &customer)
+	if err != nil {
+		slog.Error("failed to unmarshal customer", "error", err)
+		return nil, err
+	}
+
+	return &customer, nil
+}
+
+func (r *DynamoDBRepository) GetMessageHistory(sessionID string) ([]models.Message, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.dynamoDBClient.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        messageTableName,
+		Limit:            aws.Int32(10),
+		FilterExpression: aws.String("session_id = :sid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":sid": &types.AttributeValueMemberS{Value: sessionID},
+		},
+	})
+
+	if err != nil {
+		slog.Error("failed to scan message history", "error", err, "session_id", sessionID)
+		return nil, err
+	}
+
+	var messages []models.Message
+	err = attributevalue.UnmarshalListOfMaps(result.Items, &messages)
+	if err != nil {
+		slog.Error("failed to unmarshal messages", "error", err)
+		return nil, err
+	}
+
+	return messages, nil
+}
+
+func (r *DynamoDBRepository) UpdateSession(session models.Session) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	item, err := attributevalue.MarshalMap(session)
+	if err != nil {
+		slog.Error("failed to marshal session", "error", err)
+		return err
+	}
+
+	_, err = r.dynamoDBClient.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: sessionTableName,
+		Item:      item,
+	})
+
+	if err != nil {
+		slog.Error("failed to update session", "error", err)
+		return err
+	}
+
+	return nil
 }
