@@ -82,7 +82,7 @@ func (s *GeminiService) GenerateResponse(message string) (string, error) {
 
 	response, err := s.session.SendMessage(ctx, genai.Text(message))
 	if err != nil {
-		slog.Error("failed to generate response", "error", err)
+		slog.Error("failed to generate response", "error", err, "model", s.model, "message", message)
 		return "", err
 	}
 

@@ -47,7 +47,7 @@ func (r *DynamoDBRepository) SaveSession(session models.Session) error {
 
 	item, err := attributevalue.MarshalMap(session)
 	if err != nil {
-		slog.Error("failed to marshal session", "error", err)
+		slog.Error("failed to marshal session", "error", err, "session", session)
 		return err
 	}
 
@@ -65,7 +65,7 @@ func (r *DynamoDBRepository) SaveMessage(message models.Message) error {
 
 	item, err := attributevalue.MarshalMap(message)
 	if err != nil {
-		slog.Error("failed to marshal message", "error", err)
+		slog.Error("failed to marshal message", "error", err, "message", message)
 		return err
 	}
 
@@ -130,7 +130,7 @@ func (r *DynamoDBRepository) GetCustomer(businessPhoneNumber string) (*models.Cu
 	var customer models.Customer
 	err = attributevalue.UnmarshalMap(result.Item, &customer)
 	if err != nil {
-		slog.Error("failed to unmarshal customer", "error", err)
+		slog.Error("failed to unmarshal customer", "error", err, "bussiess_phone", businessPhoneNumber)
 		return nil, err
 	}
 
@@ -159,7 +159,7 @@ func (r *DynamoDBRepository) GetMessageHistory(sessionID string) ([]models.Messa
 	var messages []models.Message
 	err = attributevalue.UnmarshalListOfMaps(result.Items, &messages)
 	if err != nil {
-		slog.Error("failed to unmarshal messages", "error", err)
+		slog.Error("failed to unmarshal messages", "error", err, "session_id", sessionID)
 		return nil, err
 	}
 
@@ -172,7 +172,7 @@ func (r *DynamoDBRepository) UpdateSession(session models.Session) error {
 
 	item, err := attributevalue.MarshalMap(session)
 	if err != nil {
-		slog.Error("failed to marshal session", "error", err)
+		slog.Error("failed to marshal session", "error", err, "session", session)
 		return err
 	}
 
@@ -182,7 +182,7 @@ func (r *DynamoDBRepository) UpdateSession(session models.Session) error {
 	})
 
 	if err != nil {
-		slog.Error("failed to update session", "error", err)
+		slog.Error("failed to update session", "error", err, "session", session)
 		return err
 	}
 
