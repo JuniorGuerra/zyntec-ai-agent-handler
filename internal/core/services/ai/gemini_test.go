@@ -3,7 +3,6 @@ package ai_test
 import (
 	"app/internal/core/models"
 	"app/internal/core/services/ai"
-	"fmt"
 	"os"
 	"testing"
 
@@ -15,9 +14,9 @@ func TestGenerateResponse(t *testing.T) {
 	geminiService, err := ai.NewGeminiService(apiKey)
 	require.NoError(t, err)
 
-	geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{})
+	aiSession := geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{})
 
-	res, err := geminiService.GenerateResponse("Hello")
+	res, err := aiSession.GenerateResponse("Hello")
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 }
@@ -27,7 +26,7 @@ func TestGenerateResponseWithHistory(t *testing.T) {
 	geminiService, err := ai.NewGeminiService(apiKey)
 	require.NoError(t, err)
 
-	geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{
+	aiSession := geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{
 		{
 			Message: "Hello",
 			Role:    models.CustomerRole,
@@ -38,8 +37,7 @@ func TestGenerateResponseWithHistory(t *testing.T) {
 		},
 	})
 
-	res, err := geminiService.GenerateResponse("I need to know how is the weather today")
-	fmt.Println(res)
+	res, err := aiSession.GenerateResponse("I need to know how is the weather today")
 	require.NoError(t, err)
 	require.NotEmpty(t, res)
 }

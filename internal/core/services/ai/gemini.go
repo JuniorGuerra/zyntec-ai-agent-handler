@@ -13,7 +13,11 @@ import (
 )
 
 type GeminiService struct {
-	client  *genai.Client
+	client *genai.Client
+	model  string
+}
+
+type GeminiSession struct {
 	model   string
 	session *genai.ChatSession
 }
@@ -40,7 +44,7 @@ func (s *GeminiService) SetModel(model string) {
 	s.model = model
 }
 
-func (s *GeminiService) SetSystemInstruction(instruction string, history []models.Message) {
+func (s *GeminiService) SetSystemInstruction(instruction string, history []models.Message) AISession {
 	model := s.client.GenerativeModel(s.model)
 	model.SystemInstruction = &genai.Content{
 		Parts: []genai.Part{
@@ -50,8 +54,6 @@ func (s *GeminiService) SetSystemInstruction(instruction string, history []model
 	}
 
 	cs := model.StartChat()
-
-	s.session = cs
 
 	historyGemini := []*genai.Content{}
 
@@ -68,21 +70,26 @@ func (s *GeminiService) SetSystemInstruction(instruction string, history []model
 		})
 	}
 
-	s.session.History = historyGemini
+	cs.History = historyGemini
+
+	return &GeminiSession{
+		model:   s.model,
+		session: cs,
+	}
 }
 
-func (s *GeminiService) GenerateResponse(message string) (string, error) {
+func (gs *GeminiSession) GenerateResponse(message string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if s.session == nil {
+	if gs.session == nil {
 		slog.Error("session is nil")
 		return "", fmt.Errorf("session is nil")
 	}
 
-	response, err := s.session.SendMessage(ctx, genai.Text(message))
+	response, err := gs.session.SendMessage(ctx, genai.Text(message))
 	if err != nil {
-		slog.Error("failed to generate response", "error", err, "model", s.model, "message", message)
+		slog.Error("failed to generate response", "error", err, "model", gs.model, "message", message)
 		return "", err
 	}
 

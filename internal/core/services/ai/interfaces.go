@@ -2,8 +2,11 @@ package ai
 
 import "app/internal/core/models"
 
-type AIModels interface {
+type AISession interface {
 	GenerateResponse(message string) (string, error)
-	SetSystemInstruction(instruction string, history []models.Message)
+}
+
+type AIModels interface {
+	SetSystemInstruction(instruction string, history []models.Message) AISession
 	SetModel(model string)
 }

@@ -83,11 +83,11 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 
 	start = time.Now()
 	h.aiService.SetModel(customer.AIModel)
-	h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
+	aiSession := h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
 	slog.Info("Set model and system instruction", "duration", time.Since(start))
 
 	start = time.Now()
-	aiResponse, err := h.aiService.GenerateResponse(req.Payload.Body)
+	aiResponse, err := aiSession.GenerateResponse(req.Payload.Body)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
