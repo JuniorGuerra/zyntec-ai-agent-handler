@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -20,10 +19,6 @@ type ChatbotAPIHandler struct {
 	repository  repositories.Repository
 	aiService   ai.AIModels
 	wahaService whatsappsvc.WhatsAppService
-
-	session  *models.Session
-	messages []models.Message
-	mu       *sync.Mutex
 }
 
 func NewChatbotAPIHandler(repository repositories.Repository, aiService ai.AIModels, wahaService whatsappsvc.WhatsAppService) *ChatbotAPIHandler {
@@ -31,7 +26,6 @@ func NewChatbotAPIHandler(repository repositories.Repository, aiService ai.AIMod
 		repository:  repository,
 		aiService:   aiService,
 		wahaService: wahaService,
-		mu:          &sync.Mutex{},
 	}
 }
 
@@ -55,24 +49,28 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
+
+	if !customer.IsActive {
+		return events.APIGatewayProxyResponse{
+			Body:       `{"error": "Customer is not active"}`,
+			StatusCode: 400,
+		}, nil
+	}
+
 	slog.Info("Customer", "customer", customer, "duration", time.Since(start))
 
 	start = time.Now()
-	err = h.getOrCreateSession(req.Me.ID, req.Payload.From)
+	session, err := h.getOrCreateSession(req.Me.ID, req.Payload.From)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 			StatusCode: 500,
 		}, nil
 	}
-	slog.Info("Session", "session", h.session, "duration", time.Since(start))
+	slog.Info("Session", "session", session, "duration", time.Since(start))
 
 	start = time.Now()
-	go h.addMessageToSession(models.CustomerRole, req.Payload.Body)
-	slog.Info("Add message to session", "duration", time.Since(start))
-
-	start = time.Now()
-	messages, err := h.repository.GetMessageHistory(h.session.ID)
+	messages, err := h.repository.GetMessageHistory(session.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
@@ -97,8 +95,9 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	slog.Info("Generate response", "ai_response", aiResponse, "duration", time.Since(start))
 
 	start = time.Now()
-	h.addMessageToSession(models.AssistantRole, aiResponse)
-	err = h.saveMessages()
+	customerMsg := h.addMessage(session, models.CustomerRole, req.Payload.Body)
+	assistantMsg := h.addMessage(session, models.AssistantRole, aiResponse)
+	err = h.repository.SaveMessages(customerMsg, assistantMsg)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
@@ -107,7 +106,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	}
 	slog.Info("Save messages", "duration", time.Since(start))
 
-	// err = h.wahaService.SendWhatsAppMessage(h.session.CustomerPhoneNumber, aiResponse)
+	// err = h.wahaService.SendWhatsAppMessage(session.CustomerPhoneNumber, aiResponse)
 	// if err != nil {
 	// 	return events.APIGatewayProxyResponse{
 	// 		Body:       fmt.Sprintf(`{"error": "%v"}`, err),
@@ -115,38 +114,33 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 	// 	}, nil
 	// }
 
+	resp := map[string]string{"message": aiResponse}
+	jsonBody, _ := json.Marshal(resp)
+
 	return events.APIGatewayProxyResponse{
-		Body:       fmt.Sprintf(`{"message": "%v"}`, aiResponse),
+		Body:       string(jsonBody),
 		StatusCode: 200,
 	}, nil
 }
 
-func (h *ChatbotAPIHandler) addMessageToSession(role models.Role, message string) {
-	if !role.IsValidRole() {
-		slog.Error("Invalid role", "role", role)
-		return
-	}
-
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.messages = append(h.messages, models.Message{
+func (h *ChatbotAPIHandler) addMessage(session *models.Session, role models.Role, message string) models.Message {
+	return models.Message{
 		CreatedAt:           time.Now(),
-		SessionID:           h.session.ID,
+		SessionID:           session.ID,
 		ID:                  uuid.New().String(),
 		Timestamp:           fmt.Sprintf("%d", time.Now().UnixNano()),
 		Message:             message,
-		BusinessPhoneNumber: h.session.BusinessPhoneNumber,
-		CustomerPhoneNumber: h.session.CustomerPhoneNumber,
+		BusinessPhoneNumber: session.BusinessPhoneNumber,
+		CustomerPhoneNumber: session.CustomerPhoneNumber,
 		Role:                role,
-	})
+	}
 }
 
-func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) error {
+func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) (*models.Session, error) {
 	sessionID := utils.GenerateSessionID(id, from)
-	session, err := h.repository.GetSession(sessionID) // TODO: or participant
+	session, err := h.repository.GetSession(sessionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if session == nil {
@@ -160,27 +154,10 @@ func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) error {
 
 		err = h.repository.SaveSession(*session)
 		if err != nil {
-			return err
+			slog.Error("Error saving session", "session", session, "error", err)
+			return nil, err
 		}
 	}
 
-	h.session = session
-	return nil
-}
-
-func (h *ChatbotAPIHandler) saveMessages() error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if len(h.messages) == 0 {
-		return nil
-	}
-
-	err := h.repository.SaveMessages(h.messages...)
-	if err != nil {
-		slog.Error("Error saving messages", "count", len(h.messages), "error", err)
-		return err
-	}
-
-	return nil
+	return session, nil
 }

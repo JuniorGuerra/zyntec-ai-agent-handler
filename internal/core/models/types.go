@@ -35,6 +35,7 @@ type Customer struct {
 	AIPrompt            string    `json:"ai_prompt" dynamodbav:"ai_prompt"`
 	ProductsInfo        string    `json:"products_info" dynamodbav:"products_info"`
 	AIModel             string    `json:"ai_model" dynamodbav:"ai_model"`
+	IsActive            bool      `json:"is_active" dynamodbav:"is_active"`
 }
 
 type WebhookRequest struct {

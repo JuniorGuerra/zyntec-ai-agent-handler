@@ -50,7 +50,6 @@ func (s *GeminiService) SetSystemInstruction(instruction string, history []model
 		Parts: []genai.Part{
 			genai.Text(instruction),
 		},
-		Role: models.AssistantRole,
 	}
 
 	cs := model.StartChat()
@@ -59,6 +58,7 @@ func (s *GeminiService) SetSystemInstruction(instruction string, history []model
 
 	for _, msg := range history {
 		if !msg.Role.IsValidRole() {
+			slog.Error("invalid role", "role", msg.Role)
 			continue
 		}
 
