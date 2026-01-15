@@ -7,6 +7,5 @@ type AISession interface {
 }
 
 type AIModels interface {
-	SetSystemInstruction(instruction string, history []models.Message) AISession
-	SetModel(model string)
+	CreateSession(model, instruction string, history []models.Message) AISession
 }

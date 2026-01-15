@@ -14,7 +14,7 @@ func TestGenerateResponse(t *testing.T) {
 	geminiService, err := ai.NewGeminiService(apiKey)
 	require.NoError(t, err)
 
-	aiSession := geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{})
+	aiSession := geminiService.CreateSession("", "You are a helpful assistant.", []models.Message{})
 
 	res, err := aiSession.GenerateResponse("Hello")
 	require.NoError(t, err)
@@ -26,7 +26,7 @@ func TestGenerateResponseWithHistory(t *testing.T) {
 	geminiService, err := ai.NewGeminiService(apiKey)
 	require.NoError(t, err)
 
-	aiSession := geminiService.SetSystemInstruction("You are a helpful assistant.", []models.Message{
+	aiSession := geminiService.CreateSession("", "You are a helpful assistant.", []models.Message{
 		{
 			Message: "Hello",
 			Role:    models.CustomerRole,

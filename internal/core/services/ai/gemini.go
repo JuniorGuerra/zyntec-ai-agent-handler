@@ -13,8 +13,8 @@ import (
 )
 
 type GeminiService struct {
-	client *genai.Client
-	model  string
+	client       *genai.Client
+	defaultModel string
 }
 
 type GeminiSession struct {
@@ -31,21 +31,17 @@ func NewGeminiService(apiKey string) (AIModels, error) {
 	}
 
 	return &GeminiService{
-		client: client,
-		model:  "gemini-2.0-flash-exp",
+		client:       client,
+		defaultModel: "gemini-2.0-flash-exp",
 	}, nil
 }
 
-func (s *GeminiService) SetModel(model string) {
-	if model == "" {
-		return
+func (s *GeminiService) CreateSession(modelName, instruction string, history []models.Message) AISession {
+	if modelName == "" {
+		modelName = s.defaultModel
 	}
 
-	s.model = model
-}
-
-func (s *GeminiService) SetSystemInstruction(instruction string, history []models.Message) AISession {
-	model := s.client.GenerativeModel(s.model)
+	model := s.client.GenerativeModel(modelName)
 	model.SystemInstruction = &genai.Content{
 		Parts: []genai.Part{
 			genai.Text(instruction),
@@ -73,13 +69,13 @@ func (s *GeminiService) SetSystemInstruction(instruction string, history []model
 	cs.History = historyGemini
 
 	return &GeminiSession{
-		model:   s.model,
+		model:   modelName,
 		session: cs,
 	}
 }
 
 func (gs *GeminiSession) GenerateResponse(message string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if gs.session == nil {
@@ -91,6 +87,11 @@ func (gs *GeminiSession) GenerateResponse(message string) (string, error) {
 	if err != nil {
 		slog.Error("failed to generate response", "error", err, "model", gs.model, "message", message)
 		return "", err
+	}
+
+	if len(response.Candidates) == 0 || response.Candidates[0].Content == nil {
+		slog.Error("no candidates in response", "model", gs.model)
+		return "", fmt.Errorf("no response from AI model")
 	}
 
 	var responseText strings.Builder
