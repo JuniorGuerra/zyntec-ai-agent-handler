@@ -39,9 +39,6 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	slog.Info("Request", "request", req)
-
-	start := time.Now()
 	customer, err := h.repository.GetCustomer(req.Me.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -57,9 +54,6 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	slog.Info("Customer", "customer", customer, "duration", time.Since(start))
-
-	start = time.Now()
 	session, err := h.getOrCreateSession(req.Me.ID, req.Payload.From)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -67,9 +61,33 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
-	slog.Info("Session", "session", session, "duration", time.Since(start))
 
-	start = time.Now()
+	if req.Payload.FromMe || session.IsHumanAgent || session.UpdatedAt.After(time.Now().Add(time.Duration(customer.AgentTimeout)*time.Minute)) {
+
+		err = h.repository.SaveMessages(h.addMessage(session, models.CustomerRole, req.Payload.Body))
+		if err != nil {
+			return events.APIGatewayProxyResponse{
+				Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+				StatusCode: 500,
+			}, nil
+		}
+		session.IsHumanAgent = true
+		session.UpdatedAt = time.Now()
+
+		err = h.repository.SaveSession(*session)
+		if err != nil {
+			return events.APIGatewayProxyResponse{
+				Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+				StatusCode: 500,
+			}, nil
+		}
+
+		return events.APIGatewayProxyResponse{
+			Body:       `{"error": "Session is already in human agent mode"}`,
+			StatusCode: 400,
+		}, nil
+	}
+
 	messages, err := h.repository.GetMessageHistory(session.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -77,14 +95,10 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
-	slog.Info("Get message history", "messages", messages, "duration", time.Since(start))
 
-	start = time.Now()
 	h.aiService.SetModel(customer.AIModel)
 	aiSession := h.aiService.SetSystemInstruction(customer.AIPrompt, messages)
-	slog.Info("Set model and system instruction", "duration", time.Since(start))
 
-	start = time.Now()
 	aiResponse, err := aiSession.GenerateResponse(req.Payload.Body)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -92,9 +106,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
-	slog.Info("Generate response", "ai_response", aiResponse, "duration", time.Since(start))
 
-	start = time.Now()
 	customerMsg := h.addMessage(session, models.CustomerRole, req.Payload.Body)
 	assistantMsg := h.addMessage(session, models.AssistantRole, aiResponse)
 	err = h.repository.SaveMessages(customerMsg, assistantMsg)
@@ -104,7 +116,6 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 			StatusCode: 500,
 		}, nil
 	}
-	slog.Info("Save messages", "duration", time.Since(start))
 
 	// err = h.wahaService.SendWhatsAppMessage(session.CustomerPhoneNumber, aiResponse)
 	// if err != nil {
@@ -150,6 +161,7 @@ func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) (*models.Session
 			SessionExpiryAt:     time.Now().Add(1 * time.Hour),
 			BusinessPhoneNumber: id,
 			CustomerPhoneNumber: from,
+			IsHumanAgent:        false,
 		}
 
 		err = h.repository.SaveSession(*session)

@@ -12,6 +12,8 @@ type Session struct {
 	ID                  string    `json:"id" dynamodbav:"id"`
 	BusinessPhoneNumber string    `json:"business_phone_number" dynamodbav:"business_phone_number"`
 	CustomerPhoneNumber string    `json:"customer_phone_number" dynamodbav:"customer_phone_number"`
+	ClientName          string    `json:"client_name" dynamodbav:"client_name"`
+	IsHumanAgent        bool      `json:"is_human_agent" dynamodbav:"is_human_agent"`
 	CreatedAt           time.Time `json:"created_at" dynamodbav:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at" dynamodbav:"updated_at"`
 	SessionExpiryAt     time.Time `json:"session_expiry_at" dynamodbav:"session_expiry_at"`
@@ -32,10 +34,12 @@ type Customer struct {
 	BusinessPhoneNumber string    `json:"business_phone_number" dynamodbav:"business_phone_number"`
 	CreatedAt           time.Time `json:"created_at" dynamodbav:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at" dynamodbav:"updated_at"`
-	AIPrompt            string    `json:"ai_prompt" dynamodbav:"ai_prompt"`
-	ProductsInfo        string    `json:"products_info" dynamodbav:"products_info"`
-	AIModel             string    `json:"ai_model" dynamodbav:"ai_model"`
-	IsActive            bool      `json:"is_active" dynamodbav:"is_active"`
+	// AgentTimeout is the time in minutes that the agent has to respond to the customer
+	AgentTimeout int    `json:"agent_timeout" dynamodbav:"agent_timeout"`
+	AIPrompt     string `json:"ai_prompt" dynamodbav:"ai_prompt"`
+	ProductsInfo string `json:"products_info" dynamodbav:"products_info"`
+	AIModel      string `json:"ai_model" dynamodbav:"ai_model"`
+	IsActive     bool   `json:"is_active" dynamodbav:"is_active"`
 }
 
 type WebhookRequest struct {
