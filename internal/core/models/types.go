@@ -52,7 +52,7 @@ type WebhookMe struct {
 }
 
 type WebhookPayload struct {
-	From        string `json:"from"`
+	From        From   `json:"from"`
 	To          string `json:"to"`
 	Body        string `json:"body"`
 	Timestamp   int64  `json:"timestamp"`
@@ -61,6 +61,7 @@ type WebhookPayload struct {
 }
 
 type Role string
+type From string
 
 func (r Role) IsValidRole() bool {
 	return r == CustomerRole || r == AssistantRole || r == FunctionRole
@@ -68,4 +69,12 @@ func (r Role) IsValidRole() bool {
 
 func (r Role) String() string {
 	return string(r)
+}
+
+func (ft From) IsValidFromType() bool {
+	return ft == "status@broadcast"
+}
+
+func (ft From) String() string {
+	return string(ft)
 }

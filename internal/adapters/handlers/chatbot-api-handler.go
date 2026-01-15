@@ -39,6 +39,13 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
+	if !req.Payload.From.IsValidFromType() {
+		return events.APIGatewayProxyResponse{
+			Body:       `{"error": "Invalid from type"}`,
+			StatusCode: 400,
+		}, nil
+	}
+
 	customer, err := h.repository.GetCustomer(req.Me.ID)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -54,7 +61,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	session, err := h.getOrCreateSession(req.Me.ID, req.Payload.From)
+	session, err := h.getOrCreateSession(req.Me.ID, req.Payload.From.String())
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
