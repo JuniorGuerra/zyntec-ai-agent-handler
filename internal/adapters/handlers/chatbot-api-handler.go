@@ -62,8 +62,7 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	if req.Payload.FromMe || session.IsHumanAgent || session.UpdatedAt.After(time.Now().Add(time.Duration(customer.AgentTimeout)*time.Minute)) {
-
+	if h.isHumanAgentActive(session, customer.AgentTimeout, req.Payload.FromMe) {
 		err = h.repository.SaveMessages(h.addMessage(session, models.CustomerRole, req.Payload.Body))
 		if err != nil {
 			return events.APIGatewayProxyResponse{
@@ -71,7 +70,10 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 				StatusCode: 500,
 			}, nil
 		}
-		session.IsHumanAgent = true
+
+		if req.Payload.FromMe {
+			session.IsHumanAgent = true
+		}
 		session.UpdatedAt = time.Now()
 
 		err = h.repository.SaveSession(*session)
@@ -83,8 +85,8 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}
 
 		return events.APIGatewayProxyResponse{
-			Body:       `{"error": "Session is already in human agent mode"}`,
-			StatusCode: 400,
+			Body:       `{"message": "Session is in human agent mode"}`,
+			StatusCode: 200,
 		}, nil
 	}
 
@@ -155,10 +157,12 @@ func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) (*models.Session
 	}
 
 	if session == nil {
+		now := time.Now()
 		session = &models.Session{
 			ID:                  sessionID,
-			CreatedAt:           time.Now(),
-			SessionExpiryAt:     time.Now().Add(1 * time.Hour),
+			CreatedAt:           now,
+			UpdatedAt:           now,
+			SessionExpiryAt:     now.Add(1 * time.Hour),
 			BusinessPhoneNumber: id,
 			CustomerPhoneNumber: from,
 			IsHumanAgent:        false,
@@ -172,4 +176,14 @@ func (h *ChatbotAPIHandler) getOrCreateSession(id, from string) (*models.Session
 	}
 
 	return session, nil
+}
+
+func (h *ChatbotAPIHandler) isHumanAgentActive(session *models.Session, agentTimeout int, fromMe bool) bool {
+	timeoutExpired := session.UpdatedAt.Add(time.Duration(agentTimeout) * time.Minute).Before(time.Now())
+
+	if session.IsHumanAgent && timeoutExpired {
+		session.IsHumanAgent = false
+	}
+
+	return fromMe || (session.IsHumanAgent && !timeoutExpired)
 }

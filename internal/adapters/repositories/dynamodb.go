@@ -185,25 +185,3 @@ func (r *DynamoDBRepository) GetMessageHistory(sessionID string) ([]models.Messa
 	return messages, nil
 }
 
-func (r *DynamoDBRepository) UpdateSession(session models.Session) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	item, err := attributevalue.MarshalMap(session)
-	if err != nil {
-		slog.Error("failed to marshal session", "error", err, "session", session)
-		return err
-	}
-
-	_, err = r.dynamoDBClient.PutItem(ctx, &dynamodb.PutItemInput{
-		TableName: sessionTableName,
-		Item:      item,
-	})
-
-	if err != nil {
-		slog.Error("failed to update session", "error", err, "session", session)
-		return err
-	}
-
-	return nil
-}
