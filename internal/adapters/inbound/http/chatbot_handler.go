@@ -47,7 +47,13 @@ func (h *ChatbotHandler) Handle(request events.APIGatewayProxyRequest) (events.A
 		}, nil
 	}
 
-	jsonBody, _ := json.Marshal(response)
+	jsonBody, err := json.Marshal(response)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+			StatusCode: 500,
+		}, nil
+	}
 	return events.APIGatewayProxyResponse{
 		Body:       string(jsonBody),
 		StatusCode: 200,
