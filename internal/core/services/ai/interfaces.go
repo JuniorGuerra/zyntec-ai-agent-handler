@@ -3,7 +3,7 @@ package ai
 import "app/internal/core/models"
 
 type AISession interface {
-	GenerateResponse(message string) (string, error)
+	GenerateResponse(message string) (*AIResponse, error)
 }
 
 type AIModels interface {

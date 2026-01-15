@@ -115,8 +115,14 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
+	if aiResponse.HasAction() {
+		if err := h.handleAction(session, aiResponse.Action); err != nil {
+			slog.Error("failed to handle action", "error", err, "action", aiResponse.Action.Type)
+		}
+	}
+
 	customerMsg := h.addMessage(session, models.CustomerRole, req.Payload.Body)
-	assistantMsg := h.addMessage(session, models.AssistantRole, aiResponse)
+	assistantMsg := h.addMessage(session, models.AssistantRole, aiResponse.Message)
 	err = h.repository.SaveMessages(customerMsg, assistantMsg)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -125,15 +131,10 @@ func (h *ChatbotAPIHandler) Handle(request events.APIGatewayProxyRequest) (event
 		}, nil
 	}
 
-	// err = h.wahaService.SendWhatsAppMessage(session.CustomerPhoneNumber, aiResponse)
-	// if err != nil {
-	// 	return events.APIGatewayProxyResponse{
-	// 		Body:       fmt.Sprintf(`{"error": "%v"}`, err),
-	// 		StatusCode: 500,
-	// 	}, nil
-	// }
-
-	resp := map[string]string{"message": aiResponse}
+	resp := map[string]any{
+		"message": aiResponse.Message,
+		"action":  aiResponse.Action,
+	}
 	jsonBody, _ := json.Marshal(resp)
 
 	return events.APIGatewayProxyResponse{
@@ -192,4 +193,31 @@ func (h *ChatbotAPIHandler) isHumanAgentActive(session *models.Session, agentTim
 	}
 
 	return fromMe || (session.IsHumanAgent && !timeoutExpired)
+}
+
+func (h *ChatbotAPIHandler) handleAction(session *models.Session, action *ai.Action) error {
+	switch action.Type {
+	case ai.ActionTransferToHuman:
+		session.IsHumanAgent = true
+		session.UpdatedAt = time.Now()
+		if err := h.repository.SaveSession(*session); err != nil {
+			return fmt.Errorf("failed to save session: %w", err)
+		}
+		slog.Info("transferred to human agent", "session_id", session.ID, "reason", action.Args["reason"])
+
+	case ai.ActionScheduleAppointment:
+		// TODO: Enviar a SQS para procesamiento asíncrono
+		slog.Info("appointment scheduled",
+			"session_id", session.ID,
+			"service", action.Args["service"],
+			"date", action.Args["date"],
+			"time", action.Args["time"],
+			"notes", action.Args["notes"],
+		)
+
+	default:
+		slog.Warn("unknown action type", "action", action.Type)
+	}
+
+	return nil
 }
