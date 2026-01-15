@@ -1,7 +1,8 @@
 package ai
 
 import (
-	"app/internal/core/models"
+	"app/internal/domain/models"
+	"app/internal/ports/outbound"
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,33 +13,12 @@ import (
 	"google.golang.org/api/option"
 )
 
-type ActionType string
-
-const (
-	ActionTransferToHuman    ActionType = "transfer_to_human"
-	ActionScheduleAppointment ActionType = "schedule_appointment"
-)
-
-type Action struct {
-	Type   ActionType     `json:"type"`
-	Args   map[string]any `json:"args,omitempty"`
-}
-
-type AIResponse struct {
-	Message string  `json:"message,omitempty"`
-	Action  *Action `json:"action,omitempty"`
-}
-
-func (r *AIResponse) HasAction() bool {
-	return r.Action != nil
-}
-
-type GeminiService struct {
+type GeminiAdapter struct {
 	client       *genai.Client
 	defaultModel string
 }
 
-type GeminiSession struct {
+type geminiSession struct {
 	model   string
 	session *genai.ChatSession
 }
@@ -46,7 +26,7 @@ type GeminiSession struct {
 var availableTools = &genai.Tool{
 	FunctionDeclarations: []*genai.FunctionDeclaration{
 		{
-			Name:        string(ActionTransferToHuman),
+			Name:        string(outbound.ActionTransferToHuman),
 			Description: "Transfiere la conversación a un agente humano cuando el cliente lo solicita explícitamente, cuando el bot no puede resolver el problema, o cuando la situación requiere atención humana",
 			Parameters: &genai.Schema{
 				Type: genai.TypeObject,
@@ -60,7 +40,7 @@ var availableTools = &genai.Tool{
 			},
 		},
 		{
-			Name:        string(ActionScheduleAppointment),
+			Name:        string(outbound.ActionScheduleAppointment),
 			Description: "Agenda una cita para el cliente cuando solicita programar una visita, reunión o servicio",
 			Parameters: &genai.Schema{
 				Type: genai.TypeObject,
@@ -88,7 +68,7 @@ var availableTools = &genai.Tool{
 	},
 }
 
-func NewGeminiService(apiKey string) (AIModels, error) {
+func NewGeminiAdapter(apiKey string) (*GeminiAdapter, error) {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
@@ -96,29 +76,26 @@ func NewGeminiService(apiKey string) (AIModels, error) {
 		return nil, err
 	}
 
-	return &GeminiService{
+	return &GeminiAdapter{
 		client:       client,
 		defaultModel: "gemini-2.0-flash-exp",
 	}, nil
 }
 
-func (s *GeminiService) CreateSession(modelName, instruction string, history []models.Message) AISession {
+func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []models.Message) outbound.AISession {
 	if modelName == "" {
-		modelName = s.defaultModel
+		modelName = a.defaultModel
 	}
 
-	model := s.client.GenerativeModel(modelName)
+	model := a.client.GenerativeModel(modelName)
 	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{
-			genai.Text(instruction),
-		},
+		Parts: []genai.Part{genai.Text(instruction)},
 	}
 	model.Tools = []*genai.Tool{availableTools}
 
 	cs := model.StartChat()
 
-	historyGemini := []*genai.Content{}
-
+	var historyGemini []*genai.Content
 	for _, msg := range history {
 		if !msg.Role.IsValidRole() {
 			slog.Error("invalid role", "role", msg.Role)
@@ -126,22 +103,19 @@ func (s *GeminiService) CreateSession(modelName, instruction string, history []m
 		}
 
 		historyGemini = append(historyGemini, &genai.Content{
-			Parts: []genai.Part{
-				genai.Text(msg.Message),
-			},
-			Role: msg.Role.String(),
+			Parts: []genai.Part{genai.Text(msg.Message)},
+			Role:  msg.Role.String(),
 		})
 	}
-
 	cs.History = historyGemini
 
-	return &GeminiSession{
+	return &geminiSession{
 		model:   modelName,
 		session: cs,
 	}
 }
 
-func (gs *GeminiSession) GenerateResponse(message string) (*AIResponse, error) {
+func (gs *geminiSession) GenerateResponse(message string) (*outbound.AIResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -161,7 +135,7 @@ func (gs *GeminiSession) GenerateResponse(message string) (*AIResponse, error) {
 		return nil, fmt.Errorf("no response from AI model")
 	}
 
-	aiResponse := &AIResponse{}
+	aiResponse := &outbound.AIResponse{}
 	var responseText strings.Builder
 
 	for _, part := range response.Candidates[0].Content.Parts {
@@ -169,8 +143,8 @@ func (gs *GeminiSession) GenerateResponse(message string) (*AIResponse, error) {
 		case genai.Text:
 			responseText.WriteString(string(v))
 		case genai.FunctionCall:
-			aiResponse.Action = &Action{
-				Type: ActionType(v.Name),
+			aiResponse.Action = &outbound.Action{
+				Type: outbound.ActionType(v.Name),
 				Args: v.Args,
 			}
 			slog.Info("function call detected", "action", v.Name, "args", v.Args)

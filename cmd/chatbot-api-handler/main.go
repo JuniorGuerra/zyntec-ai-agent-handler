@@ -1,13 +1,14 @@
 package main
 
 import (
-	"app/internal/adapters/handlers"
-	"app/internal/adapters/repositories"
-	"app/internal/core/services/ai"
-	whatsappsvc "app/internal/core/services/whatsapp-svc"
 	"context"
 	"log/slog"
 	"os"
+
+	httphandler "app/internal/adapters/inbound/http"
+	"app/internal/adapters/outbound/ai"
+	"app/internal/adapters/outbound/persistence"
+	"app/internal/application/chatbot"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/sync/errgroup"
@@ -19,28 +20,21 @@ func init() {
 }
 
 func main() {
-
 	var (
-		repository  repositories.Repository
-		wahaService whatsappsvc.WhatsAppService
-		aiService   ai.AIModels
+		dbClient   *persistence.DynamoDBClient
+		aiAdapter  *ai.GeminiAdapter
 	)
 
 	g, _ := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
-		repository = repositories.NewDynamoDBRepository()
-		return nil
-	})
-
-	g.Go(func() error {
-		wahaService = whatsappsvc.NewWahaService()
+		dbClient = persistence.NewDynamoDBClient()
 		return nil
 	})
 
 	g.Go(func() error {
 		var err error
-		aiService, err = ai.NewGeminiService(os.Getenv("GEMINI_API_KEY"))
+		aiAdapter, err = ai.NewGeminiAdapter(os.Getenv("GEMINI_API_KEY"))
 		return err
 	})
 
@@ -49,7 +43,12 @@ func main() {
 		return
 	}
 
-	handler := handlers.NewChatbotAPIHandler(repository, aiService, wahaService)
+	sessionRepo := persistence.NewSessionRepository(dbClient)
+	messageRepo := persistence.NewMessageRepository(dbClient)
+	customerRepo := persistence.NewCustomerRepository(dbClient)
+
+	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
+	handler := httphandler.NewChatbotHandler(service)
 
 	lambda.Start(handler.Handle)
 }
