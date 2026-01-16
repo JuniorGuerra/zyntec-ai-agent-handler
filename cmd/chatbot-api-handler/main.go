@@ -5,10 +5,13 @@ import (
 	"log/slog"
 	"os"
 
+	"app/cmd/config"
 	httphandler "app/internal/adapters/inbound/http"
 	"app/internal/adapters/outbound/ai"
 	"app/internal/adapters/outbound/persistence"
+	"app/internal/adapters/outbound/sqs"
 	"app/internal/application/chatbot"
+	"app/internal/ports/outbound"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/sync/errgroup"
@@ -20,9 +23,16 @@ func init() {
 }
 
 func main() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		return
+	}
+
 	var (
-		dbClient  *persistence.DynamoDBClient
-		aiAdapter *ai.GeminiAdapter
+		dbClient   *persistence.DynamoDBClient
+		aiAdapter  *ai.GeminiAdapter
+		sqsAdapter outbound.SQSAdapter
 	)
 
 	g, _ := errgroup.WithContext(context.Background())
@@ -34,8 +44,13 @@ func main() {
 
 	g.Go(func() error {
 		var err error
-		aiAdapter, err = ai.NewGeminiAdapter(os.Getenv("GEMINI_API_KEY"))
+		aiAdapter, err = ai.NewGeminiAdapter(cfg.GeminiAPIKey)
 		return err
+	})
+
+	g.Go(func() error {
+		sqsAdapter = sqs.NewSQSAdapter()
+		return nil
 	})
 
 	if err := g.Wait(); err != nil {
@@ -48,7 +63,7 @@ func main() {
 	customerRepo := persistence.NewCustomerRepository(dbClient)
 
 	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
-	handler := httphandler.NewChatbotHandler(service)
+	handler := httphandler.NewChatbotHandler(service, sqsAdapter)
 
 	lambda.Start(handler.HandleWebhook)
 }

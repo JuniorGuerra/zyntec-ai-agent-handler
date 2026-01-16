@@ -1,8 +1,11 @@
 package http
 
 import (
+	"app/cmd/config"
 	"app/internal/application/chatbot"
 	"app/internal/domain/models"
+	"app/internal/ports/outbound"
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -10,11 +13,12 @@ import (
 )
 
 type ChatbotHandler struct {
-	service *chatbot.Service
+	service    *chatbot.Service
+	sqsAdapter outbound.SQSAdapter
 }
 
-func NewChatbotHandler(service *chatbot.Service) *ChatbotHandler {
-	return &ChatbotHandler{service: service}
+func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter) *ChatbotHandler {
+	return &ChatbotHandler{service: service, sqsAdapter: sqsAdapter}
 }
 
 func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -47,6 +51,23 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}, nil
 	}
 
+	// indepent of the response, we need to send the message to SQS
+	err = h.sqsAdapter.SendMessage(
+		context.Background(),
+		outbound.SQSMessage{
+			QueueURL: config.WhatsappSQSUrl,
+			Body: outbound.SQSMessageBody{
+				Message: response.Message,
+			},
+		},
+	)
+	if err != nil {
+		return events.APIGatewayProxyResponse{
+			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+			StatusCode: 500,
+		}, nil
+	}
+
 	jsonBody, err := json.Marshal(response)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -54,6 +75,7 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 			StatusCode: 500,
 		}, nil
 	}
+
 	return events.APIGatewayProxyResponse{
 		Body:       string(jsonBody),
 		StatusCode: 200,

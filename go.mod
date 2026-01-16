@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.20.30
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.53.6
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.21
 	github.com/google/generative-ai-go v0.20.1
 	github.com/google/uuid v1.6.0
 	golang.org/x/sync v0.10.0
