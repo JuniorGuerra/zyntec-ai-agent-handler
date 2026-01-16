@@ -17,7 +17,7 @@ func NewChatbotHandler(service *chatbot.Service) *ChatbotHandler {
 	return &ChatbotHandler{service: service}
 }
 
-func (h *ChatbotHandler) Handle(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
+func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
 	req := &models.WebhookRequest{}
 
 	if err := json.Unmarshal([]byte(request.Body), req); err != nil {

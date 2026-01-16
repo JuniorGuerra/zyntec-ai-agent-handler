@@ -21,8 +21,8 @@ func init() {
 
 func main() {
 	var (
-		dbClient   *persistence.DynamoDBClient
-		aiAdapter  *ai.GeminiAdapter
+		dbClient  *persistence.DynamoDBClient
+		aiAdapter *ai.GeminiAdapter
 	)
 
 	g, _ := errgroup.WithContext(context.Background())
@@ -50,5 +50,5 @@ func main() {
 	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
 	handler := httphandler.NewChatbotHandler(service)
 
-	lambda.Start(handler.Handle)
+	lambda.Start(handler.HandleWebhook)
 }
