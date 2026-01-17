@@ -11,4 +11,11 @@ type Customer struct {
 	ProductsInfo        string    `json:"products_info" dynamodbav:"products_info"`
 	AIModel             string    `json:"ai_model" dynamodbav:"ai_model"`
 	IsActive            bool      `json:"is_active" dynamodbav:"is_active"`
+	APIKey              string    `json:"api_key" dynamodbav:"api_key"`
+	URL                 string    `json:"url" dynamodbav:"url"`
+	SessionName         string    `json:"session_name" dynamodbav:"session_name"` // used to identify the session in waha
+}
+
+func (c *Customer) IsValid() bool {
+	return c.IsActive && c.APIKey != ""
 }

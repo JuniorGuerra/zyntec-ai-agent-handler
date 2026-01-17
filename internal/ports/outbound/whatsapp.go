@@ -1,5 +1,7 @@
 package outbound
 
+import "app/internal/domain/models"
+
 type WhatsAppPort interface {
-	SendMessage(phoneNumber string, message string) error
+	SendMessage(input models.SendMessageInput) error
 }

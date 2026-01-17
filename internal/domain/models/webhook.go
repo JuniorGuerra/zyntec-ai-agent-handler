@@ -27,3 +27,11 @@ func (ft From) IsValidFromType() bool {
 func (ft From) String() string {
 	return string(ft)
 }
+
+type SendMessageInput struct {
+	APIKey      string `json:"api_key"`
+	PhoneNumber string `json:"phone_number"`
+	Message     string `json:"message"`
+	URL         string `json:"url"`
+	SessionName string `json:"session_name"`
+}

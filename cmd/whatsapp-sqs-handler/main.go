@@ -1,8 +1,12 @@
-package whatsappsqshandler
+package main
 
 import (
+	config "app/cmd/config/whatsapp-sqs-config"
 	"app/internal/adapters/inbound/sqs"
+	"app/internal/adapters/outbound/persistence"
 	sqsAdapter "app/internal/adapters/outbound/sqs"
+	"app/internal/adapters/outbound/whatsapp"
+	"app/internal/application/waha"
 	"log/slog"
 	"os"
 
@@ -15,8 +19,20 @@ func init() {
 }
 
 func main() {
-	adapter := sqsAdapter.NewSQSAdapter()
-	handler := sqs.NewWhatsAppHandler(adapter)
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		return
+	}
 
-	lambda.Start(handler.HandleMessage)
+	adapter := sqsAdapter.NewSQSAdapter()
+
+	dbClient := persistence.NewDynamoDBClient()
+	customerRepo := persistence.NewCustomerRepository(dbClient)
+
+	wahaAdapter := whatsapp.NewWahaAdapter(cfg.WAHAURL)
+	wahaHandler := waha.NewService(customerRepo, wahaAdapter)
+	handler := sqs.NewWhatsAppHandler(adapter, wahaHandler)
+
+	lambda.Start(handler.HandleSQSMessage)
 }

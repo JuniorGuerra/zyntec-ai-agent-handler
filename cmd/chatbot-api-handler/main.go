@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"app/cmd/config"
+	config "app/cmd/config/chatbot-api-config"
 	httphandler "app/internal/adapters/inbound/http"
 	"app/internal/adapters/outbound/ai"
 	"app/internal/adapters/outbound/persistence"
@@ -63,7 +63,7 @@ func main() {
 	customerRepo := persistence.NewCustomerRepository(dbClient)
 
 	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
-	handler := httphandler.NewChatbotHandler(service, sqsAdapter)
+	handler := httphandler.NewChatbotHandler(service, sqsAdapter, cfg.WhatsappSQSUrl)
 
 	lambda.Start(handler.HandleWebhook)
 }

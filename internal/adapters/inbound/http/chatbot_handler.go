@@ -1,7 +1,6 @@
 package http
 
 import (
-	"app/cmd/config"
 	"app/internal/application/chatbot"
 	"app/internal/domain/models"
 	"app/internal/ports/outbound"
@@ -13,12 +12,13 @@ import (
 )
 
 type ChatbotHandler struct {
-	service    *chatbot.Service
-	sqsAdapter outbound.SQSAdapter
+	service        *chatbot.Service
+	sqsAdapter     outbound.SQSAdapter
+	whatsappSQSUrl string
 }
 
-func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter) *ChatbotHandler {
-	return &ChatbotHandler{service: service, sqsAdapter: sqsAdapter}
+func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter, whatsappSQSUrl string) *ChatbotHandler {
+	return &ChatbotHandler{service: service, sqsAdapter: sqsAdapter, whatsappSQSUrl: whatsappSQSUrl}
 }
 
 func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -55,9 +55,10 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 	err = h.sqsAdapter.SendMessage(
 		context.Background(),
 		outbound.SQSMessage{
-			QueueURL: config.WhatsappSQSUrl,
+			QueueURL: h.whatsappSQSUrl,
 			Body: outbound.SQSMessageBody{
-				Message: response.Message,
+				CustomerID: req.Me.ID,
+				Message:    response.Message,
 			},
 		},
 	)
