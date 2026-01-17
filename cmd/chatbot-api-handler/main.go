@@ -1,13 +1,17 @@
 package main
 
 import (
-	"app/internal/adapters/handlers"
-	"app/internal/adapters/repositories"
-	"app/internal/core/services/ai"
-	whatsappsvc "app/internal/core/services/whatsapp-svc"
 	"context"
 	"log/slog"
 	"os"
+
+	config "app/cmd/config/chatbot-api-config"
+	httphandler "app/internal/adapters/inbound/http"
+	"app/internal/adapters/outbound/ai"
+	"app/internal/adapters/outbound/persistence"
+	"app/internal/adapters/outbound/sqs"
+	"app/internal/application/chatbot"
+	"app/internal/ports/outbound"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"golang.org/x/sync/errgroup"
@@ -19,29 +23,34 @@ func init() {
 }
 
 func main() {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		slog.Error("failed to load config", "error", err)
+		return
+	}
 
 	var (
-		repository  repositories.Repository
-		wahaService whatsappsvc.WhatsAppService
-		aiService   ai.AIModels
+		dbClient   *persistence.DynamoDBClient
+		aiAdapter  *ai.GeminiAdapter
+		sqsAdapter outbound.SQSAdapter
 	)
 
 	g, _ := errgroup.WithContext(context.Background())
 
 	g.Go(func() error {
-		repository = repositories.NewDynamoDBRepository()
-		return nil
-	})
-
-	g.Go(func() error {
-		wahaService = whatsappsvc.NewWahaService()
+		dbClient = persistence.NewDynamoDBClient()
 		return nil
 	})
 
 	g.Go(func() error {
 		var err error
-		aiService, err = ai.NewGeminiService(os.Getenv("GEMINI_API_KEY"))
+		aiAdapter, err = ai.NewGeminiAdapter(cfg.GeminiAPIKey)
 		return err
+	})
+
+	g.Go(func() error {
+		sqsAdapter = sqs.NewSQSAdapter()
+		return nil
 	})
 
 	if err := g.Wait(); err != nil {
@@ -49,7 +58,12 @@ func main() {
 		return
 	}
 
-	handler := handlers.NewChatbotAPIHandler(repository, aiService, wahaService)
+	sessionRepo := persistence.NewSessionRepository(dbClient)
+	messageRepo := persistence.NewMessageRepository(dbClient)
+	customerRepo := persistence.NewCustomerRepository(dbClient)
 
-	lambda.Start(handler.Handle)
+	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
+	handler := httphandler.NewChatbotHandler(service, sqsAdapter, cfg.WhatsappSQSUrl)
+
+	lambda.Start(handler.HandleWebhook)
 }
