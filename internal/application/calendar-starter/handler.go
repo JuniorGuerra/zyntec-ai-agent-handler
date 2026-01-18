@@ -23,9 +23,15 @@ func NewCalendarStarterHandler(calendarPort outbound.CalendarPort, dbClient *per
 }
 
 func (h *CalendarStarterHandler) Handler(request events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
-
 	code := request.QueryStringParameters["code"]
 	state := request.QueryStringParameters["state"]
+
+	if code == "" || state == "" {
+		return events.APIGatewayProxyResponse{
+			Body:       `{"error": "missing required parameters: code and state"}`,
+			StatusCode: 400,
+		}, nil
+	}
 
 	token, err := h.calendarPort.ExchangeToken(code)
 	if err != nil {

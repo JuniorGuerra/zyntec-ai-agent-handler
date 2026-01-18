@@ -233,3 +233,31 @@ func (r *CalendarRepository) Save(calendar models.Calendar) error {
 	})
 	return err
 }
+
+func (r *CalendarRepository) GetByCustomerID(customerID string) (*models.Calendar, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.db.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: calendarTableName,
+		Key: map[string]types.AttributeValue{
+			"customer_id": &types.AttributeValueMemberS{Value: customerID},
+		},
+	})
+	if err != nil {
+		slog.Error("failed to get calendar", "error", err, "customer_id", customerID)
+		return nil, err
+	}
+
+	if result.Item == nil {
+		return nil, nil
+	}
+
+	var calendar models.Calendar
+	if err := attributevalue.UnmarshalMap(result.Item, &calendar); err != nil {
+		slog.Error("failed to unmarshal calendar", "error", err, "customer_id", customerID)
+		return nil, err
+	}
+
+	return &calendar, nil
+}
