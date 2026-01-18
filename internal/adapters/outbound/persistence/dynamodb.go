@@ -18,6 +18,7 @@ var (
 	sessionTableName  = aws.String("zyntec_agent_sessions")
 	messageTableName  = aws.String("zyntec_agent_messages")
 	customerTableName = aws.String("zyntec_agent_customers")
+	calendarTableName = aws.String("zyntec_agent_calendars")
 )
 
 type DynamoDBClient struct {
@@ -204,4 +205,31 @@ func (r *CustomerRepository) Get(businessPhoneNumber string) (*models.Customer, 
 	}
 
 	return &customer, nil
+}
+
+// CalendarRepository implementation
+
+type CalendarRepository struct {
+	db *DynamoDBClient
+}
+
+func NewCalendarRepository(db *DynamoDBClient) *CalendarRepository {
+	return &CalendarRepository{db: db}
+}
+
+func (r *CalendarRepository) Save(calendar models.Calendar) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	item, err := attributevalue.MarshalMap(calendar)
+	if err != nil {
+		slog.Error("failed to marshal calendar", "error", err, "calendar", calendar)
+		return err
+	}
+
+	_, err = r.db.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: calendarTableName,
+		Item:      item,
+	})
+	return err
 }
