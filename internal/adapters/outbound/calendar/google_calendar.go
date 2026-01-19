@@ -62,8 +62,7 @@ func (g *GoogleCalendarAdapter) ExchangeToken(code string) (*oauth2.Token, error
 }
 
 func (g *GoogleCalendarAdapter) getClient(refreshToken string) (*calendar.Service, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	ctx := context.Background()
 
 	token := &oauth2.Token{RefreshToken: refreshToken}
 	tokenSource := g.Config.TokenSource(ctx, token)

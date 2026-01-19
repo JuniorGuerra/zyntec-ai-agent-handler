@@ -6,6 +6,7 @@ import (
 	"app/internal/ports/outbound"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 type CalendarService struct {
@@ -96,6 +97,19 @@ func (s *CalendarService) RescheduleAppointment(req models.RescheduleEventReques
 		return fmt.Errorf("calendar not found for customer: %s", req.CustomerID)
 	}
 
+	newStartTime := fmt.Sprintf("%sT%s:00", req.NewDate, req.NewTime)
+	newEndTime := fmt.Sprintf("%sT%s:00", req.NewDate, addOneHour(req.NewTime))
+
+	if err := s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
+		RefreshToken: calendar.RefreshToken,
+		Timezone:     calendar.Timezone,
+		StartTime:    newStartTime,
+		EndTime:      newEndTime,
+	}); err != nil {
+		slog.Error("new time slot not available", "error", err)
+		return err
+	}
+
 	if err := s.calendarPort.UpdateEvent(calendar.RefreshToken, outbound.UpdateEventInput{
 		OriginalDate: req.OriginalDate,
 		OriginalTime: req.OriginalTime,
@@ -109,4 +123,15 @@ func (s *CalendarService) RescheduleAppointment(req models.RescheduleEventReques
 
 	slog.Info("appointment rescheduled", "customer_id", req.CustomerID, "new_date", req.NewDate, "reason", req.Reason)
 	return nil
+}
+
+func addOneHour(timeStr string) string {
+	if timeStr == "" {
+		return "10:00"
+	}
+	t, err := time.Parse("15:04", timeStr)
+	if err != nil {
+		return "10:00"
+	}
+	return t.Add(time.Hour).Format("15:04")
 }
