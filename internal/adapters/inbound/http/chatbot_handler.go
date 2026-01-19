@@ -62,6 +62,7 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 			},
 		},
 	)
+
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
@@ -81,4 +82,14 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		Body:       string(jsonBody),
 		StatusCode: 200,
 	}, nil
+}
+
+func (h *ChatbotHandler) ProcessAction(customerID string, action outbound.Action) error {
+
+	switch action.Type {
+	case outbound.ActionScheduleAppointment:
+		return h.service.ProcessAction(customerID, action)
+	default:
+		return nil
+	}
 }
