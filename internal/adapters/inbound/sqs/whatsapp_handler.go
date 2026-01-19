@@ -10,13 +10,11 @@ import (
 )
 
 type WhatsAppHandler struct {
-	sqsAdapter  outbound.SQSAdapter
 	wahaHandler *waha.Service
 }
 
-func NewWhatsAppHandler(sqsAdapter outbound.SQSAdapter, wahaHandler *waha.Service) *WhatsAppHandler {
+func NewWhatsAppHandler(wahaHandler *waha.Service) *WhatsAppHandler {
 	return &WhatsAppHandler{
-		sqsAdapter:  sqsAdapter,
 		wahaHandler: wahaHandler,
 	}
 }

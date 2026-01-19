@@ -9,6 +9,8 @@ type CalendarPort interface {
 	ExchangeToken(code string) (*oauth2.Token, error)
 	ValidateAvailability(input ValidateAvailabilityInput) error
 	CreateEvent(refreshToken string, event CalendarEventInput) error
+	DeleteEvent(refreshToken string, input DeleteEventInput) error
+	UpdateEvent(refreshToken string, input UpdateEventInput) error
 }
 
 type CalendarEventInput struct {
@@ -25,4 +27,18 @@ type ValidateAvailabilityInput struct {
 	Timezone     string
 	StartTime    string
 	EndTime      string
+}
+
+type DeleteEventInput struct {
+	Date     string
+	Time     string
+	Timezone string
+}
+
+type UpdateEventInput struct {
+	OriginalDate string
+	OriginalTime string
+	NewDate      string
+	NewTime      string
+	Timezone     string
 }

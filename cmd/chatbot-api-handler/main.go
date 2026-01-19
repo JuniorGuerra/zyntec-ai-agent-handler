@@ -63,7 +63,7 @@ func main() {
 	customerRepo := persistence.NewCustomerRepository(dbClient)
 
 	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
-	handler := httphandler.NewChatbotHandler(service, sqsAdapter, cfg.WhatsappSQSUrl)
+	handler := httphandler.NewChatbotHandler(service, sqsAdapter, cfg.WhatsappSQSUrl, cfg.CalendarSQSUrl)
 
 	lambda.Start(handler.HandleWebhook)
 }

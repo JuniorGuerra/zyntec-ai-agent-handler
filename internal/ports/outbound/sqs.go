@@ -14,7 +14,7 @@ type SQSMessageBody struct {
 
 type SQSMessage struct {
 	QueueURL   string                                 `json:"queue_url"`
-	Body       SQSMessageBody                         `json:"body"`
+	Body       any                                    `json:"body"`
 	Attributes map[string]types.MessageAttributeValue `json:"attributes"`
 }
 

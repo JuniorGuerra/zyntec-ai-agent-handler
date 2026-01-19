@@ -5,8 +5,10 @@ import "app/internal/domain/models"
 type ActionType string
 
 const (
-	ActionTransferToHuman     ActionType = "transfer_to_human"
-	ActionScheduleAppointment ActionType = "schedule_appointment"
+	ActionTransferToHuman       ActionType = "transfer_to_human"
+	ActionScheduleAppointment   ActionType = "schedule_appointment"
+	ActionCancelAppointment     ActionType = "cancel_appointment"
+	ActionRescheduleAppointment ActionType = "reschedule_appointment"
 )
 
 type Action struct {

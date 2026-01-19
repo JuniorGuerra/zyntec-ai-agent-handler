@@ -9,6 +9,7 @@ type Config struct {
 	GeminiAPIKey   string
 	AWSRegion      string
 	WhatsappSQSUrl string
+	CalendarSQSUrl string
 }
 
 var WhatsappSQSUrl string
@@ -18,6 +19,7 @@ func LoadConfig() (*Config, error) {
 		GeminiAPIKey:   os.Getenv("GEMINI_API_KEY"),
 		AWSRegion:      getEnvOrDefault("AWS_REGION", "us-east-1"),
 		WhatsappSQSUrl: getEnvOrDefault("WHATSAPP_SQS_URL", "https://sqs.us-east-1.amazonaws.com/492017761132/send-whatsapp-message-queue"),
+		CalendarSQSUrl: os.Getenv("CALENDAR_SQS_URL"),
 	}
 
 	if err := cfg.validate(); err != nil {

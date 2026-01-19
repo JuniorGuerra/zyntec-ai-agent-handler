@@ -4,7 +4,6 @@ import (
 	config "app/cmd/config/whatsapp-sqs-config"
 	"app/internal/adapters/inbound/sqs"
 	"app/internal/adapters/outbound/persistence"
-	sqsAdapter "app/internal/adapters/outbound/sqs"
 	"app/internal/adapters/outbound/whatsapp"
 	"app/internal/application/waha"
 	"log/slog"
@@ -25,14 +24,12 @@ func main() {
 		return
 	}
 
-	adapter := sqsAdapter.NewSQSAdapter()
-
 	dbClient := persistence.NewDynamoDBClient()
 	customerRepo := persistence.NewCustomerRepository(dbClient)
 
 	wahaAdapter := whatsapp.NewWahaAdapter(cfg.WAHAURL)
 	wahaHandler := waha.NewService(customerRepo, wahaAdapter)
-	handler := sqs.NewWhatsAppHandler(adapter, wahaHandler)
+	handler := sqs.NewWhatsAppHandler(wahaHandler)
 
 	lambda.Start(handler.HandleSQSMessage)
 }

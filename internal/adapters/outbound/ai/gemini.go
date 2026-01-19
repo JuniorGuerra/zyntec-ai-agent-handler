@@ -65,6 +65,58 @@ var availableTools = &genai.Tool{
 				Required: []string{"service"},
 			},
 		},
+		{
+			Name:        string(outbound.ActionCancelAppointment),
+			Description: "Cancela una cita existente cuando el cliente solicita cancelarla",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"date": {
+						Type:        genai.TypeString,
+						Description: "Fecha de la cita a cancelar (formato: YYYY-MM-DD)",
+					},
+					"time": {
+						Type:        genai.TypeString,
+						Description: "Hora de la cita a cancelar (formato: HH:MM)",
+					},
+					"reason": {
+						Type:        genai.TypeString,
+						Description: "Motivo de la cancelación",
+					},
+				},
+				Required: []string{"date"},
+			},
+		},
+		{
+			Name:        string(outbound.ActionRescheduleAppointment),
+			Description: "Reprograma una cita existente cuando el cliente solicita cambiar la fecha u hora",
+			Parameters: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"original_date": {
+						Type:        genai.TypeString,
+						Description: "Fecha original de la cita (formato: YYYY-MM-DD)",
+					},
+					"original_time": {
+						Type:        genai.TypeString,
+						Description: "Hora original de la cita (formato: HH:MM)",
+					},
+					"new_date": {
+						Type:        genai.TypeString,
+						Description: "Nueva fecha para la cita (formato: YYYY-MM-DD)",
+					},
+					"new_time": {
+						Type:        genai.TypeString,
+						Description: "Nueva hora para la cita (formato: HH:MM)",
+					},
+					"reason": {
+						Type:        genai.TypeString,
+						Description: "Motivo del cambio",
+					},
+				},
+				Required: []string{"new_date"},
+			},
+		},
 	},
 }
 
