@@ -199,7 +199,7 @@ El modelo Gemini puede invocar acciones automatizadas. Roadmap de funcionalidade
 
 ### Core
 - [x] `transfer_to_human` - Transferir conversación a agente humano
-- [ ] `schedule_appointment` - Agendar cita (definido, falta integración)
+- [x] `schedule_appointment` - Agendar cita
 
 ### Comunicación
 - [ ] `send_location` - Enviar ubicación del negocio/sucursal
