@@ -14,16 +14,14 @@ import (
 type ChatbotHandler struct {
 	service        *chatbot.Service
 	sqsAdapter     outbound.SQSAdapter
-	calendarPort   outbound.CalendarPort
 	whatsappSQSUrl string
 	calendarSQSUrl string
 }
 
-func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter, calendarPort outbound.CalendarPort, whatsappSQSUrl, calendarSQSUrl string) *ChatbotHandler {
+func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter, whatsappSQSUrl, calendarSQSUrl string) *ChatbotHandler {
 	return &ChatbotHandler{
 		service:        service,
 		sqsAdapter:     sqsAdapter,
-		calendarPort:   calendarPort,
 		whatsappSQSUrl: whatsappSQSUrl,
 		calendarSQSUrl: calendarSQSUrl,
 	}
@@ -59,16 +57,14 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}, nil
 	}
 
-	action := h.service.ProcessAction(req.Me.ID, response.Action)
-	if action != nil {
-		err = h.sqsAdapter.SendMessage(
+	if response.CalendarAction != nil {
+		if err := h.sqsAdapter.SendMessage(
 			context.Background(),
 			outbound.SQSMessage{
 				QueueURL: h.calendarSQSUrl,
-				Body:     action,
+				Body:     response.CalendarAction,
 			},
-		)
-		if err != nil {
+		); err != nil {
 			return events.APIGatewayProxyResponse{
 				Body:       fmt.Sprintf(`{"error": "%v"}`, err),
 				StatusCode: 500,
@@ -76,7 +72,6 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}
 	}
 
-	// indepent of the response, we need to send the message to SQS
 	err = h.sqsAdapter.SendMessage(
 		context.Background(),
 		outbound.SQSMessage{
@@ -87,7 +82,6 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 			},
 		},
 	)
-
 	if err != nil {
 		return events.APIGatewayProxyResponse{
 			Body:       fmt.Sprintf(`{"error": "%v"}`, err),

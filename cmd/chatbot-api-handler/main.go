@@ -66,7 +66,7 @@ func main() {
 	calendarPort := calendar.NewGoogleCalendarAdapter(
 		cfg.GoogleClientID,
 		cfg.GoogleClientSecret,
-		"", // not necessary here, but required by the constructor
+		"",
 	)
 
 	service := chatbot.NewService(
@@ -80,7 +80,6 @@ func main() {
 	handler := httphandler.NewChatbotHandler(
 		service,
 		sqsAdapter,
-		calendarPort,
 		cfg.WhatsappSQSUrl,
 		cfg.CalendarSQSUrl,
 	)

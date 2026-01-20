@@ -1,6 +1,7 @@
 package chatbot
 
 import (
+	"app/internal/adapters/outbound/calendar"
 	"app/internal/domain/models"
 	"app/internal/domain/utils"
 	"app/internal/ports/outbound"
@@ -39,8 +40,8 @@ func NewService(
 }
 
 type ChatResponse struct {
-	Message string           `json:"message"`
-	Action  *outbound.Action `json:"action,omitempty"`
+	Message        string `json:"message"`
+	CalendarAction any    `json:"calendar_action,omitempty"`
 }
 
 func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, fromMe bool) (*ChatResponse, error) {
@@ -86,25 +87,29 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 		return nil, fmt.Errorf("failed to generate AI response: %w", err)
 	}
 
+	response := &ChatResponse{
+		Message: aiResponse.Message,
+	}
+
 	if aiResponse.HasAction() {
-		if err := s.handleAction(HandleActionInput{
-			Session: session,
-			Action:  aiResponse.Action,
-		}); err != nil {
-			slog.Error("failed to handle action", "error", err, "action", aiResponse.Action.Type)
+		result, err := s.handleAction(session, aiResponse.Action)
+		if err == calendar.ErrTimeSlotNotAvailable {
+			response.Message = "Lo siento, el horario seleccionado no está disponible. Por favor intenta con otro horario."
+		} else if err != nil {
+			slog.Warn("action validation failed", "error", err, "action", aiResponse.Action.Type)
+			response.Message = fmt.Sprintf("Lo siento, no pude completar la acción: %s. Por favor intenta con otro horario.", err.Error())
+		} else if result != nil {
+			response.CalendarAction = result
 		}
 	}
 
 	customerMsg := s.createMessage(session, models.CustomerRole, messageBody)
-	assistantMsg := s.createMessage(session, models.AssistantRole, aiResponse.Message)
+	assistantMsg := s.createMessage(session, models.AssistantRole, response.Message)
 	if err := s.messageRepo.Save(customerMsg, assistantMsg); err != nil {
 		return nil, fmt.Errorf("failed to save messages: %w", err)
 	}
 
-	return &ChatResponse{
-		Message: aiResponse.Message,
-		Action:  aiResponse.Action,
-	}, nil
+	return response, nil
 }
 
 func (s *Service) getOrCreateSession(businessID, customerPhone string) (*models.Session, error) {
@@ -158,44 +163,99 @@ func (s *Service) createMessage(session *models.Session, role models.Role, messa
 	}
 }
 
-type HandleActionInput struct {
-	Session  *models.Session
-	Action   *outbound.Action
-	Calendar *models.Calendar
-}
-
-func (s *Service) handleAction(input HandleActionInput) error {
-	switch input.Action.Type {
+func (s *Service) handleAction(session *models.Session, action *outbound.Action) (any, error) {
+	switch action.Type {
 	case outbound.ActionTransferToHuman:
-
-		input.Session.IsHumanAgent = true
-		input.Session.UpdatedAt = time.Now()
-		if err := s.sessionRepo.Save(*input.Session); err != nil {
-			return fmt.Errorf("failed to save session: %w", err)
-		}
-		slog.Info("transferred to human agent", "session_id", input.Session.ID, "reason", input.Action.Args["reason"])
+		return s.handleTransferToHuman(session, action)
 
 	case outbound.ActionScheduleAppointment:
+		return s.handleScheduleAppointment(session, action)
 
-		calendar, err := s.calendarRepo.GetByCustomerID(input.Session.BusinessPhoneNumber)
-		if err != nil {
-			return fmt.Errorf("failed to get calendar: %w", err)
-		}
+	case outbound.ActionCancelAppointment:
+		return s.handleCancelAppointment(session, action)
 
-		err = s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
-			RefreshToken: calendar.RefreshToken,
-			Timezone:     calendar.Timezone,
-			StartTime:    buildStartTime(input.Action.Args, "date", "time"),
-			EndTime:      buildEndTime(input.Action.Args, "date", "time"),
-		})
-
-		if err != nil {
-			return err
-		}
+	case outbound.ActionRescheduleAppointment:
+		return s.handleRescheduleAppointment(session, action)
 
 	default:
-		slog.Warn("unknown action type", "action", input.Action.Type)
+		slog.Warn("unknown action type", "action", action.Type)
+		return nil, nil
+	}
+}
+
+func (s *Service) handleTransferToHuman(session *models.Session, action *outbound.Action) (any, error) {
+	session.IsHumanAgent = true
+	session.UpdatedAt = time.Now()
+	if err := s.sessionRepo.Save(*session); err != nil {
+		return nil, fmt.Errorf("failed to save session: %w", err)
+	}
+	slog.Info("transferred to human agent", "session_id", session.ID, "reason", action.Args["reason"])
+	return nil, nil
+}
+
+func (s *Service) handleScheduleAppointment(session *models.Session, action *outbound.Action) (*models.CalendarEventRequest, error) {
+	calendar, err := s.calendarRepo.GetByCustomerID(session.BusinessPhoneNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get calendar: %w", err)
 	}
 
-	return nil
+	startTime := buildStartTime(action.Args, "date", "time")
+	endTime := buildEndTime(action.Args, "date", "time")
+
+	if err := s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
+		RefreshToken: calendar.RefreshToken,
+		Timezone:     calendar.Timezone,
+		StartTime:    startTime,
+		EndTime:      endTime,
+	}); err != nil {
+		return nil, err
+	}
+
+	return &models.CalendarEventRequest{
+		Action:      models.CalendarActionSchedule,
+		CustomerID:  session.BusinessPhoneNumber,
+		Title:       getStringArg(action.Args, "service", "Cita"),
+		Description: getStringArg(action.Args, "notes", ""),
+		StartTime:   startTime,
+		EndTime:     endTime,
+	}, nil
+}
+
+func (s *Service) handleCancelAppointment(session *models.Session, action *outbound.Action) (*models.CancelEventRequest, error) {
+	return &models.CancelEventRequest{
+		Action:     models.CalendarActionCancel,
+		CustomerID: session.BusinessPhoneNumber,
+		Date:       getStringArg(action.Args, "date", ""),
+		Time:       getStringArg(action.Args, "time", ""),
+		Reason:     getStringArg(action.Args, "reason", ""),
+	}, nil
+}
+
+func (s *Service) handleRescheduleAppointment(session *models.Session, action *outbound.Action) (*models.RescheduleEventRequest, error) {
+	calendar, err := s.calendarRepo.GetByCustomerID(session.BusinessPhoneNumber)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get calendar: %w", err)
+	}
+
+	newStartTime := buildStartTime(action.Args, "new_date", "new_time")
+	newEndTime := buildEndTime(action.Args, "new_date", "new_time")
+
+	if err := s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
+		RefreshToken: calendar.RefreshToken,
+		Timezone:     calendar.Timezone,
+		StartTime:    newStartTime,
+		EndTime:      newEndTime,
+	}); err != nil {
+		return nil, err
+	}
+
+	return &models.RescheduleEventRequest{
+		Action:       models.CalendarActionReschedule,
+		CustomerID:   session.BusinessPhoneNumber,
+		OriginalDate: getStringArg(action.Args, "original_date", ""),
+		OriginalTime: getStringArg(action.Args, "original_time", ""),
+		NewDate:      getStringArg(action.Args, "new_date", ""),
+		NewTime:      getStringArg(action.Args, "new_time", ""),
+		Reason:       getStringArg(action.Args, "reason", ""),
+	}, nil
 }
