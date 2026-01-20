@@ -21,7 +21,7 @@ func NewWhatsAppHandler(wahaHandler *waha.Service) *WhatsAppHandler {
 
 func (h *WhatsAppHandler) HandleSQSMessage(event events.SQSEvent) error {
 	for _, record := range event.Records {
-		if err := h.ProcessMessage(record); err != nil {
+		if err := h.processMessage(record); err != nil {
 			slog.Error(
 				"Failed to process message",
 				"error", err,
@@ -34,7 +34,7 @@ func (h *WhatsAppHandler) HandleSQSMessage(event events.SQSEvent) error {
 	return nil
 }
 
-func (h *WhatsAppHandler) ProcessMessage(message events.SQSMessage) error {
+func (h *WhatsAppHandler) processMessage(message events.SQSMessage) error {
 	msg := outbound.SQSMessageBody{}
 	if err := json.Unmarshal([]byte(message.Body), &msg); err != nil {
 		return err

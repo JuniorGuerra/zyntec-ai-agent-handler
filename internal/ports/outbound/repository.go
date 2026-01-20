@@ -15,3 +15,8 @@ type MessageRepository interface {
 type CustomerRepository interface {
 	Get(businessPhoneNumber string) (*models.Customer, error)
 }
+
+type CalendarRepository interface {
+	Save(calendar models.Calendar) error
+	GetByCustomerID(customerID string) (*models.Calendar, error)
+}

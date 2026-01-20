@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 )
@@ -15,14 +14,16 @@ import (
 type ChatbotHandler struct {
 	service        *chatbot.Service
 	sqsAdapter     outbound.SQSAdapter
+	calendarPort   outbound.CalendarPort
 	whatsappSQSUrl string
 	calendarSQSUrl string
 }
 
-func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter, whatsappSQSUrl, calendarSQSUrl string) *ChatbotHandler {
+func NewChatbotHandler(service *chatbot.Service, sqsAdapter outbound.SQSAdapter, calendarPort outbound.CalendarPort, whatsappSQSUrl, calendarSQSUrl string) *ChatbotHandler {
 	return &ChatbotHandler{
 		service:        service,
 		sqsAdapter:     sqsAdapter,
+		calendarPort:   calendarPort,
 		whatsappSQSUrl: whatsappSQSUrl,
 		calendarSQSUrl: calendarSQSUrl,
 	}
@@ -58,6 +59,23 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}, nil
 	}
 
+	action := h.service.ProcessAction(req.Me.ID, response.Action)
+	if action != nil {
+		err = h.sqsAdapter.SendMessage(
+			context.Background(),
+			outbound.SQSMessage{
+				QueueURL: h.calendarSQSUrl,
+				Body:     action,
+			},
+		)
+		if err != nil {
+			return events.APIGatewayProxyResponse{
+				Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+				StatusCode: 500,
+			}, nil
+		}
+	}
+
 	// indepent of the response, we need to send the message to SQS
 	err = h.sqsAdapter.SendMessage(
 		context.Background(),
@@ -77,13 +95,6 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}, nil
 	}
 
-	if err := h.ProcessAction(req.Me.ID, response.Action); err != nil {
-		return events.APIGatewayProxyResponse{
-			Body:       fmt.Sprintf(`{"error": "%v"}`, err),
-			StatusCode: 500,
-		}, nil
-	}
-
 	jsonBody, err := json.Marshal(response)
 	if err != nil {
 		return events.APIGatewayProxyResponse{
@@ -96,114 +107,4 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		Body:       string(jsonBody),
 		StatusCode: 200,
 	}, nil
-}
-
-func (h *ChatbotHandler) ProcessAction(customerID string, action *outbound.Action) error {
-	if action == nil {
-		return nil
-	}
-
-	switch action.Type {
-	case outbound.ActionScheduleAppointment:
-		return h.sendCalendarEvent(customerID, action)
-	case outbound.ActionCancelAppointment:
-		return h.sendCancelEvent(customerID, action)
-	case outbound.ActionRescheduleAppointment:
-		return h.sendRescheduleEvent(customerID, action)
-	default:
-		return nil
-	}
-}
-
-func (h *ChatbotHandler) sendCalendarEvent(customerID string, action *outbound.Action) error {
-	calendarReq := models.CalendarEventRequest{
-		Action:      models.CalendarActionSchedule,
-		CustomerID:  customerID,
-		Title:       getStringArg(action.Args, "service", "Cita"),
-		Description: getStringArg(action.Args, "notes", ""),
-		StartTime:   buildStartTime(action.Args, "date", "time"),
-		EndTime:     buildEndTime(action.Args, "date", "time"),
-	}
-
-	return h.sqsAdapter.SendMessage(
-		context.Background(),
-		outbound.SQSMessage{
-			QueueURL: h.calendarSQSUrl,
-			Body:     calendarReq,
-		},
-	)
-}
-
-func (h *ChatbotHandler) sendCancelEvent(customerID string, action *outbound.Action) error {
-	cancelReq := models.CancelEventRequest{
-		Action:     models.CalendarActionCancel,
-		CustomerID: customerID,
-		Date:       getStringArg(action.Args, "date", ""),
-		Time:       getStringArg(action.Args, "time", ""),
-		Reason:     getStringArg(action.Args, "reason", ""),
-	}
-
-	return h.sqsAdapter.SendMessage(
-		context.Background(),
-		outbound.SQSMessage{
-			QueueURL: h.calendarSQSUrl,
-			Body:     cancelReq,
-		},
-	)
-}
-
-func (h *ChatbotHandler) sendRescheduleEvent(customerID string, action *outbound.Action) error {
-	rescheduleReq := models.RescheduleEventRequest{
-		Action:       models.CalendarActionReschedule,
-		CustomerID:   customerID,
-		OriginalDate: getStringArg(action.Args, "original_date", ""),
-		OriginalTime: getStringArg(action.Args, "original_time", ""),
-		NewDate:      getStringArg(action.Args, "new_date", ""),
-		NewTime:      getStringArg(action.Args, "new_time", ""),
-		Reason:       getStringArg(action.Args, "reason", ""),
-	}
-
-	return h.sqsAdapter.SendMessage(
-		context.Background(),
-		outbound.SQSMessage{
-			QueueURL: h.calendarSQSUrl,
-			Body:     rescheduleReq,
-		},
-	)
-}
-
-func getStringArg(args map[string]any, key, defaultVal string) string {
-	if val, ok := args[key]; ok {
-		if strVal, ok := val.(string); ok {
-			return strVal
-		}
-	}
-	return defaultVal
-}
-
-func buildStartTime(args map[string]any, dateKey, timeKey string) string {
-	date := getStringArg(args, dateKey, "")
-	timeStr := getStringArg(args, timeKey, "09:00")
-	if date == "" {
-		return ""
-	}
-	return fmt.Sprintf("%sT%s:00", date, timeStr)
-}
-
-func buildEndTime(args map[string]any, dateKey, timeKey string) string {
-	date := getStringArg(args, dateKey, "")
-	timeStr := getStringArg(args, timeKey, "09:00")
-	if date == "" {
-		return ""
-	}
-	endHour := addOneHour(timeStr)
-	return fmt.Sprintf("%sT%s:00", date, endHour)
-}
-
-func addOneHour(timeStr string) string {
-	t, err := time.Parse("15:04", timeStr)
-	if err != nil {
-		return "10:00"
-	}
-	return t.Add(time.Hour).Format("15:04")
 }

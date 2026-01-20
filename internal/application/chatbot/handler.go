@@ -15,6 +15,8 @@ type Service struct {
 	sessionRepo  outbound.SessionRepository
 	messageRepo  outbound.MessageRepository
 	customerRepo outbound.CustomerRepository
+	calendarRepo outbound.CalendarRepository
+	calendarPort outbound.CalendarPort
 	aiService    outbound.AIPort
 }
 
@@ -22,12 +24,16 @@ func NewService(
 	sessionRepo outbound.SessionRepository,
 	messageRepo outbound.MessageRepository,
 	customerRepo outbound.CustomerRepository,
+	calendarRepo outbound.CalendarRepository,
+	calendarPort outbound.CalendarPort,
 	aiService outbound.AIPort,
 ) *Service {
 	return &Service{
 		sessionRepo:  sessionRepo,
 		messageRepo:  messageRepo,
 		customerRepo: customerRepo,
+		calendarPort: calendarPort,
+		calendarRepo: calendarRepo,
 		aiService:    aiService,
 	}
 }
@@ -81,7 +87,10 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 	}
 
 	if aiResponse.HasAction() {
-		if err := s.handleAction(session, aiResponse.Action); err != nil {
+		if err := s.handleAction(HandleActionInput{
+			Session: session,
+			Action:  aiResponse.Action,
+		}); err != nil {
 			slog.Error("failed to handle action", "error", err, "action", aiResponse.Action.Type)
 		}
 	}
@@ -149,28 +158,43 @@ func (s *Service) createMessage(session *models.Session, role models.Role, messa
 	}
 }
 
-func (s *Service) handleAction(session *models.Session, action *outbound.Action) error {
-	switch action.Type {
+type HandleActionInput struct {
+	Session  *models.Session
+	Action   *outbound.Action
+	Calendar *models.Calendar
+}
+
+func (s *Service) handleAction(input HandleActionInput) error {
+	switch input.Action.Type {
 	case outbound.ActionTransferToHuman:
-		session.IsHumanAgent = true
-		session.UpdatedAt = time.Now()
-		if err := s.sessionRepo.Save(*session); err != nil {
+
+		input.Session.IsHumanAgent = true
+		input.Session.UpdatedAt = time.Now()
+		if err := s.sessionRepo.Save(*input.Session); err != nil {
 			return fmt.Errorf("failed to save session: %w", err)
 		}
-		slog.Info("transferred to human agent", "session_id", session.ID, "reason", action.Args["reason"])
+		slog.Info("transferred to human agent", "session_id", input.Session.ID, "reason", input.Action.Args["reason"])
 
 	case outbound.ActionScheduleAppointment:
-		// TODO: Enviar a SQS para procesamiento asíncrono
-		slog.Info("appointment scheduled",
-			"session_id", session.ID,
-			"service", action.Args["service"],
-			"date", action.Args["date"],
-			"time", action.Args["time"],
-			"notes", action.Args["notes"],
-		)
+
+		calendar, err := s.calendarRepo.GetByCustomerID(input.Session.BusinessPhoneNumber)
+		if err != nil {
+			return fmt.Errorf("failed to get calendar: %w", err)
+		}
+
+		err = s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
+			RefreshToken: calendar.RefreshToken,
+			Timezone:     calendar.Timezone,
+			StartTime:    buildStartTime(input.Action.Args, "date", "time"),
+			EndTime:      buildEndTime(input.Action.Args, "date", "time"),
+		})
+
+		if err != nil {
+			return err
+		}
 
 	default:
-		slog.Warn("unknown action type", "action", action.Type)
+		slog.Warn("unknown action type", "action", input.Action.Type)
 	}
 
 	return nil

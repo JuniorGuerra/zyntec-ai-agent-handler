@@ -8,6 +8,7 @@ import (
 	config "app/cmd/config/chatbot-api-config"
 	httphandler "app/internal/adapters/inbound/http"
 	"app/internal/adapters/outbound/ai"
+	"app/internal/adapters/outbound/calendar"
 	"app/internal/adapters/outbound/persistence"
 	"app/internal/adapters/outbound/sqs"
 	"app/internal/application/chatbot"
@@ -61,9 +62,28 @@ func main() {
 	sessionRepo := persistence.NewSessionRepository(dbClient)
 	messageRepo := persistence.NewMessageRepository(dbClient)
 	customerRepo := persistence.NewCustomerRepository(dbClient)
+	calendarRepo := persistence.NewCalendarRepository(dbClient)
+	calendarPort := calendar.NewGoogleCalendarAdapter(
+		cfg.GoogleClientID,
+		cfg.GoogleClientSecret,
+		"", // not necessary here, but required by the constructor
+	)
 
-	service := chatbot.NewService(sessionRepo, messageRepo, customerRepo, aiAdapter)
-	handler := httphandler.NewChatbotHandler(service, sqsAdapter, cfg.WhatsappSQSUrl, cfg.CalendarSQSUrl)
+	service := chatbot.NewService(
+		sessionRepo,
+		messageRepo,
+		customerRepo,
+		calendarRepo,
+		calendarPort,
+		aiAdapter,
+	)
+	handler := httphandler.NewChatbotHandler(
+		service,
+		sqsAdapter,
+		calendarPort,
+		cfg.WhatsappSQSUrl,
+		cfg.CalendarSQSUrl,
+	)
 
 	lambda.Start(handler.HandleWebhook)
 }

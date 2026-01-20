@@ -22,7 +22,7 @@ func NewCalendarHandler(service *calendar.CalendarService) *CalendarHandler {
 
 func (h *CalendarHandler) HandleSQSMessage(event events.SQSEvent) error {
 	for _, record := range event.Records {
-		if err := h.ProcessMessage(record); err != nil {
+		if err := h.processMessage(record); err != nil {
 			slog.Error(
 				"failed to process calendar message",
 				"error", err,
@@ -39,7 +39,7 @@ type calendarAction struct {
 	Action models.CalendarActionType `json:"action"`
 }
 
-func (h *CalendarHandler) ProcessMessage(message events.SQSMessage) error {
+func (h *CalendarHandler) processMessage(message events.SQSMessage) error {
 	var action calendarAction
 	if err := json.Unmarshal([]byte(message.Body), &action); err != nil {
 		slog.Error("failed to unmarshal action type", "error", err)
