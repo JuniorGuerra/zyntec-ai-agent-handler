@@ -217,9 +217,9 @@ El modelo Gemini puede invocar acciones automatizadas. Roadmap de funcionalidade
 - [ ] `apply_discount` - Validar y aplicar cupón de descuento
 
 ### Calendario
-- [ ] `check_availability` - Consultar horarios disponibles
-- [ ] `cancel_appointment` - Cancelar cita existente
-- [ ] `reschedule_appointment` - Mover cita a otra fecha/hora
+- [x] `check_availability` - Consultar horarios disponibles
+- [x] `cancel_appointment` - Cancelar cita existente
+- [x] `reschedule_appointment` - Mover cita a otra fecha/hora
 - [ ] `list_appointments` - Mostrar citas futuras del cliente
 - [ ] `add_to_waitlist` - Agregar a lista de espera
 - [ ] `send_calendar_invite` - Enviar .ics al email del cliente
