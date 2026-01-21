@@ -61,6 +61,10 @@ var availableTools = &genai.Tool{
 						Type:        genai.TypeString,
 						Description: "Notas adicionales del cliente",
 					},
+					"email": {
+						Type:        genai.TypeString,
+						Description: "Correo electrónico del cliente para enviar confirmación (opcional)",
+					},
 				},
 				Required: []string{"service"},
 			},
@@ -149,8 +153,27 @@ func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []m
 		now.Format("15:04"),
 	)
 
+	toolInstructions := `
+[INSTRUCCIONES CRÍTICAS SOBRE FUNCIONES]
+Tienes acceso a funciones para gestionar citas. DEBES invocar estas funciones cuando el usuario confirme una acción:
+
+- schedule_appointment: INVOCAR cuando el usuario CONFIRME agendar una cita (después de que diga "sí", "confirmo", "ok", "aja", etc.)
+- cancel_appointment: INVOCAR cuando el usuario CONFIRME cancelar una cita
+- reschedule_appointment: INVOCAR cuando el usuario CONFIRME reprogramar una cita
+- transfer_to_human: INVOCAR cuando necesites transferir a un humano
+
+IMPORTANTE:
+1. NUNCA digas "ya agendé/cancelé/reprogramé" sin haber invocado la función correspondiente
+2. Primero recopila la información necesaria (fecha, hora, servicio)
+3. Confirma con el usuario los datos
+4. Cuando el usuario confirme, INVOCA la función con los parámetros correctos
+5. NO escribas código, NO uses print(), simplemente invoca la función directamente
+
+`
+
 	systemParts := []genai.Part{
 		genai.Text(dateContext),
+		genai.Text(toolInstructions),
 		genai.Text(instruction),
 	}
 
@@ -165,6 +188,11 @@ func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []m
 
 	model.SystemInstruction = &genai.Content{Parts: systemParts}
 	model.Tools = []*genai.Tool{availableTools}
+	model.ToolConfig = &genai.ToolConfig{
+		FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode: genai.FunctionCallingAuto,
+		},
+	}
 
 	cs := model.StartChat()
 

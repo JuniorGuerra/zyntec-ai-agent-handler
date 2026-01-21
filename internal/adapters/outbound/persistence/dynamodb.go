@@ -292,17 +292,16 @@ func (r *CalendarAppointmentsRepository) GetByCustomerPhoneNumber(customerPhoneN
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := r.db.client.Query(ctx, &dynamodb.QueryInput{
-		TableName:              calendarAppointmentsTableName,
-		KeyConditionExpression: aws.String("customer_phone_number = :cid"),
+	result, err := r.db.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        calendarAppointmentsTableName,
+		FilterExpression: aws.String("customer_phone_number = :cpn"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":cid": &types.AttributeValueMemberS{Value: customerPhoneNumber},
+			":cpn": &types.AttributeValueMemberS{Value: customerPhoneNumber},
 		},
-		Limit:            aws.Int32(20),
-		ScanIndexForward: aws.Bool(false),
+		Limit: aws.Int32(50),
 	})
 	if err != nil {
-		slog.Error("failed to query calendar appointments", "error", err, "customer_phone_number", customerPhoneNumber)
+		slog.Error("failed to scan calendar appointments", "error", err, "customer_phone_number", customerPhoneNumber)
 		return nil, err
 	}
 
@@ -310,10 +309,6 @@ func (r *CalendarAppointmentsRepository) GetByCustomerPhoneNumber(customerPhoneN
 	if err := attributevalue.UnmarshalListOfMaps(result.Items, &appointments); err != nil {
 		slog.Error("failed to unmarshal calendar appointments", "error", err, "customer_phone_number", customerPhoneNumber)
 		return nil, err
-	}
-
-	for i, j := 0, len(appointments)-1; i < j; i, j = i+1, j-1 {
-		appointments[i], appointments[j] = appointments[j], appointments[i]
 	}
 
 	return appointments, nil
@@ -326,12 +321,12 @@ func (r *CalendarAppointmentsRepository) Delete(customerPhoneNumber, eventID str
 	_, err := r.db.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
 		TableName: calendarAppointmentsTableName,
 		Key: map[string]types.AttributeValue{
-			"customer_phone_number": &types.AttributeValueMemberS{Value: customerPhoneNumber},
 			"event_id":              &types.AttributeValueMemberS{Value: eventID},
+			"customer_phone_number": &types.AttributeValueMemberS{Value: customerPhoneNumber},
 		},
 	})
 	if err != nil {
-		slog.Error("failed to delete calendar appointment", "error", err, "customer_phone_number", customerPhoneNumber, "event_id", eventID)
+		slog.Error("failed to delete calendar appointment", "error", err, "event_id", eventID, "customer_phone_number", customerPhoneNumber)
 		return err
 	}
 

@@ -105,6 +105,9 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 			response.Message = fmt.Sprintf("Lo siento, no pude completar la acción: %s. Por favor intenta con otro horario.", err.Error())
 		} else if result != nil {
 			response.CalendarAction = result
+			if response.Message == "" {
+				response.Message = s.generateActionMessage(aiResponse.Action)
+			}
 		}
 	}
 
@@ -239,6 +242,11 @@ func (s *Service) handleScheduleAppointment(session *models.Session, action *out
 		return nil, err
 	}
 
+	var attendees []string
+	if email := getStringArg(action.Args, "email", ""); email != "" {
+		attendees = append(attendees, email)
+	}
+
 	return &models.CalendarEventRequest{
 		Action:      models.CalendarActionSchedule,
 		CustomerID:  session.BusinessPhoneNumber,
@@ -246,6 +254,7 @@ func (s *Service) handleScheduleAppointment(session *models.Session, action *out
 		Description: getStringArg(action.Args, "notes", ""),
 		StartTime:   startTime,
 		EndTime:     endTime,
+		Attendees:   attendees,
 	}, nil
 }
 
@@ -375,4 +384,36 @@ func (s *Service) findAppointmentByDate(customerPhoneNumber, dateStr, timeStr st
 	}
 
 	return nil, fmt.Errorf("appointment not found for date %s", dateStr)
+}
+
+func (s *Service) generateActionMessage(action *outbound.Action) string {
+	switch action.Type {
+	case outbound.ActionScheduleAppointment:
+		date := getStringArg(action.Args, "date", "")
+		timeStr := getStringArg(action.Args, "time", "")
+		service := getStringArg(action.Args, "service", "cita")
+		email := getStringArg(action.Args, "email", "")
+		msg := fmt.Sprintf("¡Listo! Agendé tu %s para el %s a las %s 🎉", service, date, timeStr)
+		if email != "" {
+			msg += fmt.Sprintf(" Te llegará la confirmación a %s 📧", email)
+		}
+		return msg
+
+	case outbound.ActionCancelAppointment:
+		date := getStringArg(action.Args, "date", "")
+		timeStr := getStringArg(action.Args, "time", "")
+		return fmt.Sprintf("¡Listo! Cancelé tu cita del %s a las %s 🗑️", date, timeStr)
+
+	case outbound.ActionRescheduleAppointment:
+		originalDate := getStringArg(action.Args, "original_date", "")
+		newDate := getStringArg(action.Args, "new_date", "")
+		newTime := getStringArg(action.Args, "new_time", "")
+		return fmt.Sprintf("¡Listo! Reprogramé tu cita del %s al %s a las %s 🔄", originalDate, newDate, newTime)
+
+	case outbound.ActionTransferToHuman:
+		return "Te estoy transfiriendo a un agente humano. ¡En un momento te atienden! 👋"
+
+	default:
+		return ""
+	}
 }
