@@ -5,10 +5,9 @@ import "time"
 type CalendarActionType string
 
 const (
-	CalendarActionSchedule         CalendarActionType = "schedule"
-	CalendarActionCancel           CalendarActionType = "cancel"
-	CalendarActionReschedule       CalendarActionType = "reschedule"
-	CalendarActionListAppointments CalendarActionType = "list_appointments"
+	CalendarActionSchedule   CalendarActionType = "schedule"
+	CalendarActionCancel     CalendarActionType = "cancel"
+	CalendarActionReschedule CalendarActionType = "reschedule"
 )
 
 type Calendar struct {

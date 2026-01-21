@@ -2,6 +2,7 @@ package chatbot
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -35,11 +36,11 @@ func buildEndTime(args map[string]any, dateKey, timeKey string) string {
 
 func buildDateAndTime(timeStr string) (time.Time, error) {
 	if timeStr == "" {
-		return time.Time{}, nil
+		return time.Time{}, fmt.Errorf("fecha no proporcionada")
 	}
 	t, err := time.Parse("2006-01-02T15:04:05", timeStr)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, fmt.Errorf("formato de fecha inválido: %w", err)
 	}
 	return t, nil
 }
@@ -50,4 +51,8 @@ func addOneHour(timeStr string) string {
 		return "10:00"
 	}
 	return t.Add(time.Hour).Format("15:04")
+}
+
+func isValidEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
 }

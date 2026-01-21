@@ -84,7 +84,7 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 		return nil, fmt.Errorf("failed to get message history: %w", err)
 	}
 
-	extraContext := s.buildExtraContext(session.BusinessPhoneNumber, customer.IsCalendarActive)
+	extraContext := s.buildExtraContext(session.CustomerPhoneNumber, customer.IsCalendarActive)
 
 	aiSession := s.aiService.CreateSession(customer.AIModel, customer.AIPrompt, messages, extraContext)
 	aiResponse, err := aiSession.GenerateResponse(messageBody)
@@ -243,7 +243,7 @@ func (s *Service) handleScheduleAppointment(session *models.Session, action *out
 	}
 
 	var attendees []string
-	if email := getStringArg(action.Args, "email", ""); email != "" {
+	if email := getStringArg(action.Args, "email", ""); email != "" && isValidEmail(email) {
 		attendees = append(attendees, email)
 	}
 
