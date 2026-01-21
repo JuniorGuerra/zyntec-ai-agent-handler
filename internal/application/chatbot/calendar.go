@@ -33,6 +33,17 @@ func buildEndTime(args map[string]any, dateKey, timeKey string) string {
 	return fmt.Sprintf("%sT%s:00", date, endHour)
 }
 
+func buildDateAndTime(timeStr string) (time.Time, error) {
+	if timeStr == "" {
+		return time.Time{}, nil
+	}
+	t, err := time.Parse("2006-01-02T15:04:05", timeStr)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return t, nil
+}
+
 func addOneHour(timeStr string) string {
 	t, err := time.Parse("15:04", timeStr)
 	if err != nil {

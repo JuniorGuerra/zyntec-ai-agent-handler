@@ -20,3 +20,9 @@ type CalendarRepository interface {
 	Save(calendar models.Calendar) error
 	GetByCustomerID(customerID string) (*models.Calendar, error)
 }
+
+type CalendarAppointmentsRepository interface {
+	Save(appointment models.CalendarEvent) error
+	GetByCustomerPhoneNumber(customerPhoneNumber string) ([]models.CalendarEvent, error)
+	Delete(customerPhoneNumber, eventID string) error
+}

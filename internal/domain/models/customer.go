@@ -14,6 +14,8 @@ type Customer struct {
 	APIKey              string    `json:"api_key" dynamodbav:"api_key"`
 	URL                 string    `json:"url" dynamodbav:"url"`
 	SessionName         string    `json:"session_name" dynamodbav:"session_name"` // used to identify the session in waha
+	//Products
+	IsCalendarActive bool `json:"is_calendar_active" dynamodbav:"is_calendar_active"`
 }
 
 func (c *Customer) IsValid() bool {

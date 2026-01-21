@@ -15,10 +15,11 @@ import (
 )
 
 var (
-	sessionTableName  = aws.String("zyntec_agent_sessions")
-	messageTableName  = aws.String("zyntec_agent_messages")
-	customerTableName = aws.String("zyntec_agent_customers")
-	calendarTableName = aws.String("zyntec_agent_calendars")
+	sessionTableName              = aws.String("zyntec_agent_sessions")
+	messageTableName              = aws.String("zyntec_agent_messages")
+	customerTableName             = aws.String("zyntec_agent_customers")
+	calendarTableName             = aws.String("zyntec_agent_calendars")
+	calendarAppointmentsTableName = aws.String("zyntec_agent_calendar_appointments")
 )
 
 type DynamoDBClient struct {
@@ -260,4 +261,79 @@ func (r *CalendarRepository) GetByCustomerID(customerID string) (*models.Calenda
 	}
 
 	return &calendar, nil
+}
+
+type CalendarAppointmentsRepository struct {
+	db *DynamoDBClient
+}
+
+func NewCalendarAppointmentsRepository(db *DynamoDBClient) *CalendarAppointmentsRepository {
+	return &CalendarAppointmentsRepository{db: db}
+}
+
+func (r *CalendarAppointmentsRepository) Save(appointment models.CalendarEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	item, err := attributevalue.MarshalMap(appointment)
+	if err != nil {
+		slog.Error("failed to marshal calendar event", "error", err, "calendar_event", appointment)
+		return err
+	}
+
+	_, err = r.db.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: calendarAppointmentsTableName,
+		Item:      item,
+	})
+	return err
+}
+
+func (r *CalendarAppointmentsRepository) GetByCustomerPhoneNumber(customerPhoneNumber string) ([]models.CalendarEvent, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.db.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              calendarAppointmentsTableName,
+		KeyConditionExpression: aws.String("customer_phone_number = :cid"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":cid": &types.AttributeValueMemberS{Value: customerPhoneNumber},
+		},
+		Limit:            aws.Int32(20),
+		ScanIndexForward: aws.Bool(false),
+	})
+	if err != nil {
+		slog.Error("failed to query calendar appointments", "error", err, "customer_phone_number", customerPhoneNumber)
+		return nil, err
+	}
+
+	var appointments []models.CalendarEvent
+	if err := attributevalue.UnmarshalListOfMaps(result.Items, &appointments); err != nil {
+		slog.Error("failed to unmarshal calendar appointments", "error", err, "customer_phone_number", customerPhoneNumber)
+		return nil, err
+	}
+
+	for i, j := 0, len(appointments)-1; i < j; i, j = i+1, j-1 {
+		appointments[i], appointments[j] = appointments[j], appointments[i]
+	}
+
+	return appointments, nil
+}
+
+func (r *CalendarAppointmentsRepository) Delete(customerPhoneNumber, eventID string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := r.db.client.DeleteItem(ctx, &dynamodb.DeleteItemInput{
+		TableName: calendarAppointmentsTableName,
+		Key: map[string]types.AttributeValue{
+			"customer_phone_number": &types.AttributeValueMemberS{Value: customerPhoneNumber},
+			"event_id":              &types.AttributeValueMemberS{Value: eventID},
+		},
+	})
+	if err != nil {
+		slog.Error("failed to delete calendar appointment", "error", err, "customer_phone_number", customerPhoneNumber, "event_id", eventID)
+		return err
+	}
+
+	return nil
 }

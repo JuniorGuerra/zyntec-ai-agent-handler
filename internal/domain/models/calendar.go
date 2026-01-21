@@ -5,9 +5,10 @@ import "time"
 type CalendarActionType string
 
 const (
-	CalendarActionSchedule   CalendarActionType = "schedule"
-	CalendarActionCancel     CalendarActionType = "cancel"
-	CalendarActionReschedule CalendarActionType = "reschedule"
+	CalendarActionSchedule         CalendarActionType = "schedule"
+	CalendarActionCancel           CalendarActionType = "cancel"
+	CalendarActionReschedule       CalendarActionType = "reschedule"
+	CalendarActionListAppointments CalendarActionType = "list_appointments"
 )
 
 type Calendar struct {
@@ -16,6 +17,16 @@ type Calendar struct {
 	Timezone     string    `json:"timezone" dynamodbav:"timezone"`
 	CreatedAt    time.Time `json:"created_at" dynamodbav:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at" dynamodbav:"expires_at"`
+}
+
+type CalendarEvent struct {
+	EventID             string    `json:"event_id" dynamodbav:"event_id"`
+	CustomerPhoneNumber string    `json:"customer_phone_number" dynamodbav:"customer_phone_number"`
+	BusinessPhoneNumber string    `json:"business_phone_number" dynamodbav:"business_phone_number"`
+	Title               string    `json:"title" dynamodbav:"title"`
+	Date                time.Time `json:"date" dynamodbav:"date"`         // Date of the event
+	EndDate             time.Time `json:"end_date" dynamodbav:"end_date"` // time of the event
+	Reason              string    `json:"reason" dynamodbav:"reason"`
 }
 
 type CalendarEventRequest struct {

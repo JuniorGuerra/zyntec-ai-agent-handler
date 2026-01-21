@@ -9,6 +9,7 @@ const (
 	ActionScheduleAppointment   ActionType = "schedule_appointment"
 	ActionCancelAppointment     ActionType = "cancel_appointment"
 	ActionRescheduleAppointment ActionType = "reschedule_appointment"
+	ActionListAppointments      ActionType = "list_appointments"
 )
 
 type Action struct {
@@ -29,6 +30,8 @@ type AISession interface {
 	GenerateResponse(message string) (*AIResponse, error)
 }
 
+type ExtraContext map[string]any
+
 type AIPort interface {
-	CreateSession(model, instruction string, history []models.Message) AISession
+	CreateSession(model, instruction string, history []models.Message, extraContext ExtraContext) AISession
 }

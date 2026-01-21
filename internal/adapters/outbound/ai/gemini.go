@@ -134,15 +134,36 @@ func NewGeminiAdapter(apiKey string) (*GeminiAdapter, error) {
 	}, nil
 }
 
-func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []models.Message) outbound.AISession {
+func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []models.Message, extraContext outbound.ExtraContext) outbound.AISession {
 	if modelName == "" {
 		modelName = a.defaultModel
 	}
 
 	model := a.client.GenerativeModel(modelName)
-	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(instruction)},
+
+	now := time.Now()
+	dateContext := fmt.Sprintf(
+		"[INFORMACIÓN DEL SISTEMA - FECHA ACTUAL]\nHoy es: %s\nFecha: %s\nHora: %s\nUsa esta información para interpretar referencias temporales como 'mañana', 'próxima semana', 'hoy', etc.\n\n",
+		now.Format("Monday, 02 January 2006"),
+		now.Format("2006-01-02"),
+		now.Format("15:04"),
+	)
+
+	systemParts := []genai.Part{
+		genai.Text(dateContext),
+		genai.Text(instruction),
 	}
+
+	if len(extraContext) > 0 {
+		var contextBuilder strings.Builder
+		contextBuilder.WriteString("\n\nContexto adicional del cliente:\n")
+		for k, v := range extraContext {
+			contextBuilder.WriteString(fmt.Sprintf("- %s: %v\n", k, v))
+		}
+		systemParts = append(systemParts, genai.Text(contextBuilder.String()))
+	}
+
+	model.SystemInstruction = &genai.Content{Parts: systemParts}
 	model.Tools = []*genai.Tool{availableTools}
 
 	cs := model.StartChat()
@@ -159,6 +180,7 @@ func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []m
 			Role:  msg.Role.String(),
 		})
 	}
+
 	cs.History = historyGemini
 
 	return &geminiSession{
@@ -170,7 +192,6 @@ func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []m
 func (gs *geminiSession) GenerateResponse(message string) (*outbound.AIResponse, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-
 	if gs.session == nil {
 		slog.Error("session is nil")
 		return nil, fmt.Errorf("session is nil")

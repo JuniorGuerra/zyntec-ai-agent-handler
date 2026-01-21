@@ -13,12 +13,13 @@ import (
 )
 
 type Service struct {
-	sessionRepo  outbound.SessionRepository
-	messageRepo  outbound.MessageRepository
-	customerRepo outbound.CustomerRepository
-	calendarRepo outbound.CalendarRepository
-	calendarPort outbound.CalendarPort
-	aiService    outbound.AIPort
+	sessionRepo              outbound.SessionRepository
+	messageRepo              outbound.MessageRepository
+	customerRepo             outbound.CustomerRepository
+	calendarRepo             outbound.CalendarRepository
+	calendarPort             outbound.CalendarPort
+	aiService                outbound.AIPort
+	calendarAppointmentsRepo outbound.CalendarAppointmentsRepository
 }
 
 func NewService(
@@ -26,16 +27,18 @@ func NewService(
 	messageRepo outbound.MessageRepository,
 	customerRepo outbound.CustomerRepository,
 	calendarRepo outbound.CalendarRepository,
+	calendarAppointmentsRepo outbound.CalendarAppointmentsRepository,
 	calendarPort outbound.CalendarPort,
 	aiService outbound.AIPort,
 ) *Service {
 	return &Service{
-		sessionRepo:  sessionRepo,
-		messageRepo:  messageRepo,
-		customerRepo: customerRepo,
-		calendarPort: calendarPort,
-		calendarRepo: calendarRepo,
-		aiService:    aiService,
+		sessionRepo:              sessionRepo,
+		messageRepo:              messageRepo,
+		customerRepo:             customerRepo,
+		calendarPort:             calendarPort,
+		calendarRepo:             calendarRepo,
+		calendarAppointmentsRepo: calendarAppointmentsRepo,
+		aiService:                aiService,
 	}
 }
 
@@ -81,7 +84,9 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 		return nil, fmt.Errorf("failed to get message history: %w", err)
 	}
 
-	aiSession := s.aiService.CreateSession(customer.AIModel, customer.AIPrompt, messages)
+	extraContext := s.buildExtraContext(session.BusinessPhoneNumber, customer.IsCalendarActive)
+
+	aiSession := s.aiService.CreateSession(customer.AIModel, customer.AIPrompt, messages, extraContext)
 	aiResponse, err := aiSession.GenerateResponse(messageBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AI response: %w", err)
@@ -195,6 +200,7 @@ func (s *Service) handleTransferToHuman(session *models.Session, action *outboun
 
 func (s *Service) handleScheduleAppointment(session *models.Session, action *outbound.Action) (*models.CalendarEventRequest, error) {
 	calendar, err := s.calendarRepo.GetByCustomerID(session.BusinessPhoneNumber)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get calendar: %w", err)
 	}
@@ -202,11 +208,33 @@ func (s *Service) handleScheduleAppointment(session *models.Session, action *out
 	startTime := buildStartTime(action.Args, "date", "time")
 	endTime := buildEndTime(action.Args, "date", "time")
 
+	appointmentDate, err := buildDateAndTime(startTime)
+	if err != nil {
+		return nil, fmt.Errorf("fecha inválida: %w", err)
+	}
+	if appointmentDate.Before(time.Now()) {
+		return nil, fmt.Errorf("no se pueden agendar citas en el pasado")
+	}
+
 	if err := s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
 		RefreshToken: calendar.RefreshToken,
 		Timezone:     calendar.Timezone,
 		StartTime:    startTime,
 		EndTime:      endTime,
+	}); err != nil {
+		return nil, err
+	}
+
+	eventID := uuid.New().String()
+	title := getStringArg(action.Args, "service", "Cita")
+
+	if err := s.calendarAppointmentsRepo.Save(models.CalendarEvent{
+		EventID:             eventID,
+		BusinessPhoneNumber: session.BusinessPhoneNumber,
+		CustomerPhoneNumber: session.CustomerPhoneNumber,
+		Title:               title,
+		Date:                appointmentDate,
+		EndDate:             appointmentDate.Add(time.Hour),
 	}); err != nil {
 		return nil, err
 	}
@@ -222,11 +250,23 @@ func (s *Service) handleScheduleAppointment(session *models.Session, action *out
 }
 
 func (s *Service) handleCancelAppointment(session *models.Session, action *outbound.Action) (*models.CancelEventRequest, error) {
+	dateStr := getStringArg(action.Args, "date", "")
+	timeStr := getStringArg(action.Args, "time", "")
+
+	appointment, err := s.findAppointmentByDate(session.CustomerPhoneNumber, dateStr, timeStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find appointment: %w", err)
+	}
+
+	if err := s.calendarAppointmentsRepo.Delete(session.CustomerPhoneNumber, appointment.EventID); err != nil {
+		return nil, fmt.Errorf("failed to delete appointment: %w", err)
+	}
+
 	return &models.CancelEventRequest{
 		Action:     models.CalendarActionCancel,
 		CustomerID: session.BusinessPhoneNumber,
-		Date:       getStringArg(action.Args, "date", ""),
-		Time:       getStringArg(action.Args, "time", ""),
+		Date:       dateStr,
+		Time:       timeStr,
 		Reason:     getStringArg(action.Args, "reason", ""),
 	}, nil
 }
@@ -237,8 +277,24 @@ func (s *Service) handleRescheduleAppointment(session *models.Session, action *o
 		return nil, fmt.Errorf("failed to get calendar: %w", err)
 	}
 
+	originalDateStr := getStringArg(action.Args, "original_date", "")
+	originalTimeStr := getStringArg(action.Args, "original_time", "")
+
+	originalAppointment, err := s.findAppointmentByDate(session.CustomerPhoneNumber, originalDateStr, originalTimeStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find original appointment: %w", err)
+	}
+
 	newStartTime := buildStartTime(action.Args, "new_date", "new_time")
 	newEndTime := buildEndTime(action.Args, "new_date", "new_time")
+
+	newDate, err := buildDateAndTime(newStartTime)
+	if err != nil {
+		return nil, fmt.Errorf("fecha inválida: %w", err)
+	}
+	if newDate.Before(time.Now()) {
+		return nil, fmt.Errorf("no se pueden reprogramar citas para el pasado")
+	}
 
 	if err := s.calendarPort.ValidateAvailability(outbound.ValidateAvailabilityInput{
 		RefreshToken: calendar.RefreshToken,
@@ -249,13 +305,74 @@ func (s *Service) handleRescheduleAppointment(session *models.Session, action *o
 		return nil, err
 	}
 
+	if err := s.calendarAppointmentsRepo.Delete(session.CustomerPhoneNumber, originalAppointment.EventID); err != nil {
+		return nil, fmt.Errorf("failed to delete original appointment: %w", err)
+	}
+
+	eventID := uuid.New().String()
+
+	if err := s.calendarAppointmentsRepo.Save(models.CalendarEvent{
+		EventID:             eventID,
+		BusinessPhoneNumber: session.BusinessPhoneNumber,
+		CustomerPhoneNumber: session.CustomerPhoneNumber,
+		Title:               originalAppointment.Title,
+		Date:                newDate,
+		EndDate:             newDate.Add(time.Hour),
+	}); err != nil {
+		return nil, err
+	}
+
 	return &models.RescheduleEventRequest{
 		Action:       models.CalendarActionReschedule,
 		CustomerID:   session.BusinessPhoneNumber,
-		OriginalDate: getStringArg(action.Args, "original_date", ""),
-		OriginalTime: getStringArg(action.Args, "original_time", ""),
+		OriginalDate: originalDateStr,
+		OriginalTime: originalTimeStr,
 		NewDate:      getStringArg(action.Args, "new_date", ""),
 		NewTime:      getStringArg(action.Args, "new_time", ""),
 		Reason:       getStringArg(action.Args, "reason", ""),
 	}, nil
+}
+
+func (s *Service) buildExtraContext(customerPhoneNumber string, isCalendarActive bool) outbound.ExtraContext {
+	ctx := outbound.ExtraContext{}
+
+	if !isCalendarActive {
+		return ctx
+	}
+
+	appointments, err := s.calendarAppointmentsRepo.GetByCustomerPhoneNumber(customerPhoneNumber)
+	if err != nil {
+		slog.Warn("failed to get appointments for extra context", "error", err)
+		return ctx
+	}
+
+	if len(appointments) > 0 {
+		ctx["citas_programadas"] = appointments
+	}
+
+	return ctx
+}
+
+func (s *Service) findAppointmentByDate(customerPhoneNumber, dateStr, timeStr string) (*models.CalendarEvent, error) {
+	appointments, err := s.calendarAppointmentsRepo.GetByCustomerPhoneNumber(customerPhoneNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	targetDate, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid date format: %w", err)
+	}
+
+	for _, apt := range appointments {
+		if apt.Date.Year() == targetDate.Year() &&
+			apt.Date.Month() == targetDate.Month() &&
+			apt.Date.Day() == targetDate.Day() {
+			if timeStr == "" || apt.Date.Format("15:04") == timeStr {
+				return &apt, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("appointment not found for date %s", dateStr)
 }
