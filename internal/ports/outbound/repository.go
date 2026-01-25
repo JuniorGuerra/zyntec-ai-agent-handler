@@ -26,3 +26,8 @@ type CalendarAppointmentsRepository interface {
 	GetByCustomerPhoneNumber(customerPhoneNumber string) ([]models.CalendarEvent, error)
 	Delete(customerPhoneNumber, eventID string) error
 }
+
+type BusinessProductsRepository interface {
+	Save(product models.BusinessProduct) error
+	GetByBusinessPhoneNumber(businessPhoneNumber string) ([]models.BusinessProduct, error)
+}

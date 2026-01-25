@@ -30,13 +30,37 @@ func (s *Service) SendMessage(msg outbound.SQSMessageBody) error {
 		return nil
 	}
 
-	err = s.wahaAdapter.SendMessage(models.SendMessageInput{
+	switch msg.ActionType {
+	case outbound.SQSActionLocation:
+		return s.sendLocation(customer, msg)
+	default:
+		return s.sendText(customer, msg)
+	}
+}
+
+func (s *Service) sendText(customer *models.Customer, msg outbound.SQSMessageBody) error {
+	return s.wahaAdapter.SendMessage(models.SendMessageInput{
 		APIKey:      customer.APIKey,
-		PhoneNumber: customer.BusinessPhoneNumber,
+		PhoneNumber: msg.ChatID,
 		Message:     msg.Message,
 		URL:         customer.URL,
 		SessionName: customer.SessionName,
 	})
+}
 
-	return err
+func (s *Service) sendLocation(customer *models.Customer, msg outbound.SQSMessageBody) error {
+	if msg.Location == nil {
+		slog.Warn("location is nil", "customer_id", msg.CustomerID)
+		return nil
+	}
+
+	return s.wahaAdapter.SendLocation(models.SendLocationInput{
+		APIKey:      customer.APIKey,
+		ChatID:      msg.ChatID,
+		Latitude:    msg.Location.Latitude,
+		Longitude:   msg.Location.Longitude,
+		Title:       msg.Location.Title,
+		URL:         customer.URL,
+		SessionName: customer.SessionName,
+	})
 }

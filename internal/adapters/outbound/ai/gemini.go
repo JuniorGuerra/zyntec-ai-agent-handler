@@ -121,6 +121,14 @@ var availableTools = &genai.Tool{
 				Required: []string{"new_date"},
 			},
 		},
+		{
+			Name:        string(outbound.ActionSendLocation),
+			Description: "Envía la ubicación del negocio en Google Maps cuando el cliente confirma que quiere recibir la ubicación/mapa",
+			Parameters: &genai.Schema{
+				Type:       genai.TypeObject,
+				Properties: map[string]*genai.Schema{},
+			},
+		},
 	},
 }
 
@@ -155,12 +163,13 @@ func (a *GeminiAdapter) CreateSession(modelName, instruction string, history []m
 
 	toolInstructions := `
 [INSTRUCCIONES CRÍTICAS SOBRE FUNCIONES]
-Tienes acceso a funciones para gestionar citas. DEBES invocar estas funciones cuando el usuario confirme una acción:
+Tienes acceso a funciones para gestionar citas y ubicación. DEBES invocar estas funciones cuando el usuario confirme una acción:
 
 - schedule_appointment: INVOCAR cuando el usuario CONFIRME agendar una cita (después de que diga "sí", "confirmo", "ok", "aja", etc.)
 - cancel_appointment: INVOCAR cuando el usuario CONFIRME cancelar una cita
 - reschedule_appointment: INVOCAR cuando el usuario CONFIRME reprogramar una cita
 - transfer_to_human: INVOCAR cuando necesites transferir a un humano
+- send_location: INVOCAR cuando el usuario quiera recibir la ubicación/mapa del negocio (después de que confirme con "sí", "ok", "envíamela", etc.)
 
 IMPORTANTE:
 1. NUNCA digas "ya agendé/cancelé/reprogramé" sin haber invocado la función correspondiente
@@ -168,6 +177,10 @@ IMPORTANTE:
 3. Confirma con el usuario los datos
 4. Cuando el usuario confirme, INVOCA la función con los parámetros correctos
 5. NO escribas código, NO uses print(), simplemente invoca la función directamente
+
+UBICACIÓN:
+- Cuando el usuario pregunte por la ubicación/dirección del negocio, responde con la dirección del contexto y pregunta si quiere recibir la ubicación en el mapa
+- Cuando confirme, invoca send_location para enviar el pin de ubicación
 
 `
 

@@ -31,9 +31,45 @@ func (a *WahaAdapter) SendMessage(input models.SendMessageInput) error {
 		return err
 	}
 
-	url := a.defaultURL
+	url := a.defaultURL + "/api/sendText"
 	if input.URL != "" {
-		url = input.URL
+		url = input.URL + "/api/sendText"
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", input.APIKey)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (a *WahaAdapter) SendLocation(input models.SendLocationInput) error {
+	body := map[string]any{
+		"chatId":    input.ChatID,
+		"latitude":  input.Latitude,
+		"longitude": input.Longitude,
+		"title":     input.Title,
+		"session":   input.SessionName,
+	}
+
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	url := a.defaultURL + "/api/sendLocation"
+	if input.URL != "" {
+		url = input.URL + "/api/sendLocation"
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))

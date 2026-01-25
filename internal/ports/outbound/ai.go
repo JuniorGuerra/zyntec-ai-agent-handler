@@ -9,6 +9,7 @@ const (
 	ActionScheduleAppointment   ActionType = "schedule_appointment"
 	ActionCancelAppointment     ActionType = "cancel_appointment"
 	ActionRescheduleAppointment ActionType = "reschedule_appointment"
+	ActionSendLocation          ActionType = "send_location"
 )
 
 type Action struct {

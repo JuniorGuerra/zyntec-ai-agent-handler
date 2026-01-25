@@ -64,6 +64,7 @@ func main() {
 	customerRepo := persistence.NewCustomerRepository(dbClient)
 	calendarRepo := persistence.NewCalendarRepository(dbClient)
 	calendarAppointmentsRepo := persistence.NewCalendarAppointmentsRepository(dbClient)
+	businessProductsRepo := persistence.NewBusinessProductsRepository(dbClient)
 	calendarPort := calendar.NewGoogleCalendarAdapter(
 		cfg.GoogleClientID,
 		cfg.GoogleClientSecret,
@@ -76,6 +77,7 @@ func main() {
 		customerRepo,
 		calendarRepo,
 		calendarAppointmentsRepo,
+		businessProductsRepo,
 		calendarPort,
 		aiAdapter,
 	)

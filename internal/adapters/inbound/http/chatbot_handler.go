@@ -72,12 +72,38 @@ func (h *ChatbotHandler) HandleWebhook(request events.APIGatewayProxyRequest) (e
 		}
 	}
 
+	if response.LocationAction != nil {
+		if err := h.sqsAdapter.SendMessage(
+			context.Background(),
+			outbound.SQSMessage{
+				QueueURL: h.whatsappSQSUrl,
+				Body: outbound.SQSMessageBody{
+					CustomerID: req.Me.ID,
+					ChatID:     req.Payload.From.String(),
+					ActionType: outbound.SQSActionLocation,
+					Location: &outbound.SQSLocation{
+						Latitude:  response.LocationAction.Latitude,
+						Longitude: response.LocationAction.Longitude,
+						Title:     response.LocationAction.Title,
+					},
+				},
+			},
+		); err != nil {
+			return events.APIGatewayProxyResponse{
+				Body:       fmt.Sprintf(`{"error": "%v"}`, err),
+				StatusCode: 500,
+			}, nil
+		}
+	}
+
 	err = h.sqsAdapter.SendMessage(
 		context.Background(),
 		outbound.SQSMessage{
 			QueueURL: h.whatsappSQSUrl,
 			Body: outbound.SQSMessageBody{
 				CustomerID: req.Me.ID,
+				ChatID:     req.Payload.From.String(),
+				ActionType: outbound.SQSActionMessage,
 				Message:    response.Message,
 			},
 		},

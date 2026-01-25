@@ -28,6 +28,7 @@ func NewService(
 	customerRepo outbound.CustomerRepository,
 	calendarRepo outbound.CalendarRepository,
 	calendarAppointmentsRepo outbound.CalendarAppointmentsRepository,
+	businessProductsRepo outbound.BusinessProductsRepository,
 	calendarPort outbound.CalendarPort,
 	aiService outbound.AIPort,
 ) *Service {
@@ -43,8 +44,15 @@ func NewService(
 }
 
 type ChatResponse struct {
-	Message        string `json:"message"`
-	CalendarAction any    `json:"calendar_action,omitempty"`
+	Message        string          `json:"message"`
+	CalendarAction any             `json:"calendar_action,omitempty"`
+	LocationAction *LocationAction `json:"location_action,omitempty"`
+}
+
+type LocationAction struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Title     string  `json:"title"`
 }
 
 func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, fromMe bool) (*ChatResponse, error) {
@@ -84,7 +92,12 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 		return nil, fmt.Errorf("failed to get message history: %w", err)
 	}
 
-	extraContext := s.buildExtraContext(session.CustomerPhoneNumber, customer.IsCalendarActive)
+	extraContext := s.buildExtraContext(
+		extraContextInput{
+			customerPhoneNumber: session.CustomerPhoneNumber,
+			isCalendarActive:    customer.IsCalendarActive,
+			Location:            customer.Location,
+		})
 
 	aiSession := s.aiService.CreateSession(customer.AIModel, customer.AIPrompt, messages, extraContext)
 	aiResponse, err := aiSession.GenerateResponse(messageBody)
@@ -97,14 +110,19 @@ func (s *Service) ProcessMessage(businessID, customerPhone, messageBody string, 
 	}
 
 	if aiResponse.HasAction() {
-		result, err := s.handleAction(session, aiResponse.Action)
+		result, err := s.handleAction(session, aiResponse.Action, customer)
 		if err == calendar.ErrTimeSlotNotAvailable {
 			response.Message = "Lo siento, el horario seleccionado no está disponible. Por favor intenta con otro horario."
 		} else if err != nil {
 			slog.Warn("action validation failed", "error", err, "action", aiResponse.Action.Type)
 			response.Message = fmt.Sprintf("Lo siento, no pude completar la acción: %s. Por favor intenta con otro horario.", err.Error())
 		} else if result != nil {
-			response.CalendarAction = result
+			switch v := result.(type) {
+			case *LocationAction:
+				response.LocationAction = v
+			default:
+				response.CalendarAction = result
+			}
 			if response.Message == "" {
 				response.Message = s.generateActionMessage(aiResponse.Action)
 			}
@@ -171,7 +189,7 @@ func (s *Service) createMessage(session *models.Session, role models.Role, messa
 	}
 }
 
-func (s *Service) handleAction(session *models.Session, action *outbound.Action) (any, error) {
+func (s *Service) handleAction(session *models.Session, action *outbound.Action, customer *models.Customer) (any, error) {
 	switch action.Type {
 	case outbound.ActionTransferToHuman:
 		return s.handleTransferToHuman(session, action)
@@ -184,6 +202,9 @@ func (s *Service) handleAction(session *models.Session, action *outbound.Action)
 
 	case outbound.ActionRescheduleAppointment:
 		return s.handleRescheduleAppointment(session, action)
+
+	case outbound.ActionSendLocation:
+		return s.handleSendLocation(customer)
 
 	default:
 		slog.Warn("unknown action type", "action", action.Type)
@@ -280,6 +301,19 @@ func (s *Service) handleCancelAppointment(session *models.Session, action *outbo
 	}, nil
 }
 
+func (s *Service) handleSendLocation(customer *models.Customer) (*LocationAction, error) {
+	if customer.Location.Latitude == 0 && customer.Location.Longitude == 0 {
+		slog.Warn("no location configured for business", "business_phone", customer.BusinessPhoneNumber)
+		return nil, fmt.Errorf("ubicación no configurada")
+	}
+
+	return &LocationAction{
+		Latitude:  customer.Location.Latitude,
+		Longitude: customer.Location.Longitude,
+		Title:     customer.Location.Title,
+	}, nil
+}
+
 func (s *Service) handleRescheduleAppointment(session *models.Session, action *outbound.Action) (*models.RescheduleEventRequest, error) {
 	calendar, err := s.calendarRepo.GetByCustomerID(session.BusinessPhoneNumber)
 	if err != nil {
@@ -342,14 +376,24 @@ func (s *Service) handleRescheduleAppointment(session *models.Session, action *o
 	}, nil
 }
 
-func (s *Service) buildExtraContext(customerPhoneNumber string, isCalendarActive bool) outbound.ExtraContext {
+type extraContextInput struct {
+	customerPhoneNumber string
+	Location            models.Location
+	isCalendarActive    bool
+}
+
+func (s *Service) buildExtraContext(input extraContextInput) outbound.ExtraContext {
 	ctx := outbound.ExtraContext{}
 
-	if !isCalendarActive {
+	if input.Location.Address != "" {
+		ctx["ubicacion_negocio"] = input.Location.Address
+	}
+
+	if !input.isCalendarActive {
 		return ctx
 	}
 
-	appointments, err := s.calendarAppointmentsRepo.GetByCustomerPhoneNumber(customerPhoneNumber)
+	appointments, err := s.calendarAppointmentsRepo.GetByCustomerPhoneNumber(input.customerPhoneNumber)
 	if err != nil {
 		slog.Warn("failed to get appointments for extra context", "error", err)
 		return ctx
@@ -412,6 +456,9 @@ func (s *Service) generateActionMessage(action *outbound.Action) string {
 
 	case outbound.ActionTransferToHuman:
 		return "Te estoy transfiriendo a un agente humano. ¡En un momento te atienden! 👋"
+
+	case outbound.ActionSendLocation:
+		return "¡Aquí te envío la ubicación! 📍"
 
 	default:
 		return ""

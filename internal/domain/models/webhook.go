@@ -35,3 +35,13 @@ type SendMessageInput struct {
 	URL         string `json:"url"`
 	SessionName string `json:"session_name"`
 }
+
+type SendLocationInput struct {
+	APIKey      string  `json:"api_key"`
+	ChatID      string  `json:"chat_id"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	Title       string  `json:"title"`
+	URL         string  `json:"url"`
+	SessionName string  `json:"session_name"`
+}

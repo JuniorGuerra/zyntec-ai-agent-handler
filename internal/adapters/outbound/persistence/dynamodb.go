@@ -20,6 +20,7 @@ var (
 	customerTableName             = aws.String("zyntec_agent_customers")
 	calendarTableName             = aws.String("zyntec_agent_calendars")
 	calendarAppointmentsTableName = aws.String("zyntec_agent_calendar_appointments")
+	businessProductsTableName     = aws.String("zyntec_agent_business_products")
 )
 
 type DynamoDBClient struct {
@@ -331,4 +332,55 @@ func (r *CalendarAppointmentsRepository) Delete(customerPhoneNumber, eventID str
 	}
 
 	return nil
+}
+
+type BusinessProductsRepository struct {
+	db *DynamoDBClient
+}
+
+func NewBusinessProductsRepository(db *DynamoDBClient) *BusinessProductsRepository {
+	return &BusinessProductsRepository{db: db}
+}
+
+func (r *BusinessProductsRepository) Save(product models.BusinessProduct) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	item, err := attributevalue.MarshalMap(product)
+	if err != nil {
+		slog.Error("failed to marshal business product", "error", err, "business_product", product)
+		return err
+	}
+
+	_, err = r.db.client.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: businessProductsTableName,
+		Item:      item,
+	})
+	return err
+}
+
+func (r *BusinessProductsRepository) GetByBusinessPhoneNumber(businessPhoneNumber string) ([]models.BusinessProduct, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := r.db.client.Scan(ctx, &dynamodb.ScanInput{
+		TableName:        businessProductsTableName,
+		FilterExpression: aws.String("business_phone_number = :bpn"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":bpn": &types.AttributeValueMemberS{Value: businessPhoneNumber},
+		},
+		Limit: aws.Int32(50),
+	})
+	if err != nil {
+		slog.Error("failed to scan business products", "error", err, "business_phone_number", businessPhoneNumber)
+		return nil, err
+	}
+
+	var products []models.BusinessProduct
+	if err := attributevalue.UnmarshalListOfMaps(result.Items, &products); err != nil {
+		slog.Error("failed to unmarshal business products", "error", err, "business_phone_number", businessPhoneNumber)
+		return nil, err
+	}
+
+	return products, nil
 }

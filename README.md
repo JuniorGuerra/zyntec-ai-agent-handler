@@ -222,6 +222,8 @@ El modelo Gemini puede invocar acciones automatizadas. Roadmap de funcionalidade
 - [x] `reschedule_appointment` - Mover cita a otra fecha/hora
 - [x] `list_appointments` - Mostrar citas futuras del cliente
 - [x] `send_calendar_invite` - Enviar .ics al email del cliente
+- [x] `send_email` - Enviar email al cliente
+- [x] `list_available_times` - Mostrar horarios disponibles
 
 ### CRM / Clientes
 - [ ] `register_lead` - Capturar datos de prospecto
